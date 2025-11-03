@@ -1,0 +1,164 @@
+@import '../../styles.scss';
+
+.login-container {
+  display: flex;
+  min-height: 100vh;
+  
+  @media (max-width: 768px) {
+    flex-direction: column-reverse;
+  }
+}
+
+.login-left {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background-color: #F3E9D8;
+}
+
+.login-content {
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+}
+
+.logo {
+  width: 150px;
+  margin-bottom: 32px;
+  /* Replace with your logo.png */
+}
+
+h1 {
+  color: $black;
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: lighten($black, 30%);
+  margin-bottom: 32px;
+  font-size: 14px;
+}
+
+#g_id_onload {
+  margin-top: 24px;
+}
+
+.custom-google-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 24px;
+  margin-top: 24px;
+  background-color: $flame;
+  color: $white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba($flame, 0.3);
+  
+  &:hover:not(:disabled) {
+    background-color: darken($flame, 10%);
+    box-shadow: 0 4px 12px rgba($flame, 0.4);
+    transform: translateY(-1px);
+  }
+  
+  &:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba($flame, 0.3);
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  .google-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    
+    path {
+      fill: $white;
+    }
+  }
+  
+  span {
+    font-family: 'Roboto', sans-serif;
+    letter-spacing: 0.25px;
+  }
+}
+
+.g_id_signin {
+  margin-top: 20px;
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: #fee;
+  color: #c33;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 20px;
+  font-size: 14px;
+  
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+.loading-spinner {
+  margin-top: 20px;
+  
+  .spinner {
+    border: 3px solid $desert-sand;
+    border-top: 3px solid $flame;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 12px;
+  }
+  
+  p {
+    color: lighten($black, 30%);
+    font-size: 14px;
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.login-right {
+  flex: 1;
+  position: relative;
+  background-image: url('/assets/trade.jpg'); /* Replace with your trade.jpg */
+  background-size: cover;
+  background-position: center;
+  min-height: 400px;
+  
+  @media (max-width: 768px) {
+    min-height: 200px;
+  }
+}
+
+.image-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba($black, 0.2);
+}

@@ -41,3 +41,13 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# SSL Certificates (dev only - never commit!)
+.cert/
+*.pem
+*.key
+*.pfx
+
+# Temporary favicon sizes
+public/favicon-*.png
+public/favicon.ico.png

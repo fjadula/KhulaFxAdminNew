@@ -59,6 +59,12 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "ssl": true,
+             "sslCert": "C:\\Users\\fjadu\\aspnet-https\\cert.pem",
+    "sslKey": "C:\\Users\\fjadu\\aspnet-https\\key.pem",
+            "port": 4200
+          },
           "configurations": {
             "production": {
               "buildTarget": "KhulaFxAdminNew:build:production"

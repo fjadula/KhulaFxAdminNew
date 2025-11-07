@@ -10,7 +10,7 @@ trigger:
       - master
 
 pool:
-   name: 'Default'
+  name: 'Default'
 
 variables:
   - group: 'Deployment-Secrets'

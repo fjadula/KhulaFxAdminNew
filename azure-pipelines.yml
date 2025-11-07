@@ -191,7 +191,7 @@ stages:
                 Write-Host ""
                 
                 # Create secure credential object
-                $password = ConvertTo-SecureString "$(deployPassword)" -AsPlainText -Force
+                $password = ConvertTo-SecureString "$(DEPLOY_PASSWORD)" -AsPlainText -Force
                 $credential = New-Object System.Management.Automation.PSCredential("$(deployUser)", $password)
                 
                 try {

@@ -230,40 +230,30 @@ stages:
                   New-Item -ItemType Directory -Path $destinationPath -Force
                   Write-Host "✅ Directory created/verified"
                   
-                  # Use Robocopy with retry logic
-                  Write-Host "Copying files with Robocopy..." -ForegroundColor Yellow
-                  $robocopyExitCode = 0
-                  $attempt = 1
-                  $maxAttempts = 3
+                  # Clean existing files first (optional - remove if you want to keep existing files)
+                  Write-Host "Cleaning destination directory..." -ForegroundColor Yellow
+                  Remove-Item -Path "$destinationPath\*" -Recurse -Force -ErrorAction SilentlyContinue
+                  Write-Host "✅ Destination cleaned"
                   
-                  do {
-                    Write-Host "Attempt $attempt of $maxAttempts..." -ForegroundColor Gray
-                    Robocopy "$sourcePath" "$destinationPath" /E /MT:8 /R:3 /W:5 /NP /NFL /NDL
-                    $robocopyExitCode = $LASTEXITCODE
-                    $attempt++
-                    
-                    if ($robocopyExitCode -gt 7) {
-                      Write-Host "Robocopy failed with exit code: $robocopyExitCode" -ForegroundColor Yellow
-                      if ($attempt -le $maxAttempts) {
-                        Write-Host "Retrying in 5 seconds..." -ForegroundColor Yellow
-                        Start-Sleep -Seconds 5
-                      }
-                    }
-                  } while ($robocopyExitCode -gt 7 -and $attempt -le $maxAttempts)
+                  # Use simple Copy-Item instead of Robocopy
+                  Write-Host "Copying files..." -ForegroundColor Yellow
+                  Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force
                   
-                  # Robocopy success codes: 0-7 (0=no files copied, 1=files copied, 2=extra files, etc.)
-                  if ($robocopyExitCode -le 7) {
-                    Write-Host ""
-                    Write-Host "✅ Frontend deployed successfully!" -ForegroundColor Green
-                    Write-Host "Location: $destinationPath" -ForegroundColor Green
-                    Write-Host "Files copied successfully (Robocopy exit code: $robocopyExitCode)" -ForegroundColor Green
-                    
-                    # Verify files in correct location
-                    Write-Host "Verifying deployed files..." -ForegroundColor Cyan
-                    $deployedFiles = Get-ChildItem -Path $destinationPath -Recurse -File
-                    Write-Host "✅ $($deployedFiles.Count) files deployed to correct location" -ForegroundColor Green
+                  Write-Host ""
+                  Write-Host "✅ Frontend deployed successfully!" -ForegroundColor Green
+                  Write-Host "Location: $destinationPath" -ForegroundColor Green
+                  
+                  # Verify files were copied
+                  Write-Host "Verifying deployed files..." -ForegroundColor Cyan
+                  $sourceFiles = Get-ChildItem -Path $sourcePath -Recurse -File
+                  $destFiles = Get-ChildItem -Path $destinationPath -Recurse -File
+                  Write-Host "✅ Source files: $($sourceFiles.Count)" -ForegroundColor Green
+                  Write-Host "✅ Destination files: $($destFiles.Count)" -ForegroundColor Green
+                  
+                  if ($destFiles.Count -gt 0) {
+                    Write-Host "✅ Deployment verified - files are in correct location" -ForegroundColor Green
                   } else {
-                    Write-Error "❌ Robocopy failed after $maxAttempts attempts with exit code: $robocopyExitCode"
+                    Write-Error "❌ No files found in destination - deployment failed"
                     exit 1
                   }
                 }
@@ -273,23 +263,34 @@ stages:
                 }
 
           - task: PowerShell@2
-            displayName: 'Verify Deployment'
+            displayName: 'Verify Files Deployed'
             inputs:
               targetType: 'inline'
               script: |
-                Write-Host "Testing frontend deployment..." -ForegroundColor Yellow
+                Write-Host "Checking deployed files..." -ForegroundColor Yellow
+                
+                $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
+                
+                Write-Host "Checking: $destinationPath"
+                $files = Get-ChildItem -Path $destinationPath -Recurse -File
+                
+                if ($files.Count -gt 0) {
+                  Write-Host "✅ SUCCESS: $($files.Count) files deployed" -ForegroundColor Green
+                  Write-Host "Sample files:" -ForegroundColor Cyan
+                  $files | Select-Object -First 10 Name, Length
+                } else {
+                  Write-Error "❌ FAILED: No files found in destination"
+                  exit 1
+                }
+
+          - task: PowerShell@2
+            displayName: 'Test Website'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "Testing website..." -ForegroundColor Yellow
                 Start-Sleep -Seconds 10
                 
-                # First, verify files were deployed to correct location
-                $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
-                $fileCount = (Get-ChildItem -Path $destinationPath -Recurse -File).Count
-                Write-Host "✅ $fileCount files deployed to correct IIS location" -ForegroundColor Green
-                
-                # Show what files were deployed
-                Write-Host "Deployed files:" -ForegroundColor Cyan
-                Get-ChildItem -Path $destinationPath | Select-Object Name, Length
-                
-                # Then test the website
                 $urlsToTest = @(
                   "https://khulafx.com/secure-admin",
                   "http://khulafx.com/secure-admin"

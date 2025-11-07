@@ -10,7 +10,7 @@ trigger:
       - master
 
 pool:
-  vmImage: 'windows-latest'
+  vmImage: 'Default'
 
 variables:
   nodeVersion: '20.x'

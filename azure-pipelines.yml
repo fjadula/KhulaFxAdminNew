@@ -216,7 +216,7 @@ stages:
                 $destinationPath = "\\$(vpsServer)\c$\inetpub\wwwroot\khulafx.com\secure-admin"
                 
                 Write-Host "Source: $sourcePath"
-                WriteHost "Destination: $destinationPath"
+                Write-Host "Destination: $destinationPath"
                 Write-Host ""
                 
                 # Show files being deployed

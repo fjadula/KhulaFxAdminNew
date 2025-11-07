@@ -203,62 +203,62 @@ stages:
                   }
                 }
 
-         - task: PowerShell@2
-  displayName: 'Deploy via Network Share'
-  inputs:
-    targetType: 'inline'
-    script: |
-      Write-Host "========================================" -ForegroundColor Cyan
-      Write-Host "Deploying Angular Frontend via Network Share" -ForegroundColor Cyan
-      Write-Host "========================================" -ForegroundColor Cyan
-      
-      $sourcePath = "$(DeployPath)"
-      $destinationPath = "\\$(vpsServer)\c$\inetpub\wwwroot\khulafx.com\secure-admin"
-      
-      Write-Host "Source: $sourcePath"
-      Write-Host "Destination: $destinationPath"
-      Write-Host ""
-      
-      # Show files being deployed
-      Write-Host "Files to deploy:"
-      Get-ChildItem -Path $sourcePath | Select-Object Name
-      Write-Host ""
-      
-      try {
-        # Create destination directory if it doesn't exist
-        Write-Host "Creating destination directory..." -ForegroundColor Yellow
-        New-Item -ItemType Directory -Path $destinationPath -Force
-        Write-Host "✅ Directory created/verified"
-        
-        # Take ownership and set permissions (run on target server)
-        Write-Host "Setting permissions..." -ForegroundColor Yellow
-        Invoke-Command -ComputerName "$(vpsServer)" -ScriptBlock {
-          $path = "C:\inetpub\wwwroot\khulafx.com\secure-admin"
-          icacls $path /grant "Everyone:(OI)(CI)F" /T
-          icacls $path /grant "Users:(OI)(CI)F" /T
-        } -Credential (New-Object System.Management.Automation.PSCredential("$(deployUser)", (ConvertTo-SecureString "$(DEPLOY_PASSWORD)" -AsPlainText -Force)))
-        Write-Host "✅ Permissions set"
-        
-        # Copy files (overwrite existing)
-        Write-Host "Copying files..." -ForegroundColor Yellow
-        Robocopy "$sourcePath" "$destinationPath" /E /MT:8 /R:3 /W:5 /NP /NFL /NDL
-        $robocopyExitCode = $LASTEXITCODE
-        
-        # Robocopy success codes: 0-7 (0=no files copied, 1=files copied, 2=extra files, etc.)
-        if ($robocopyExitCode -le 7) {
-          Write-Host ""
-          Write-Host "✅ Frontend deployed successfully via network share!" -ForegroundColor Green
-          Write-Host "Location: $destinationPath" -ForegroundColor Green
-          Write-Host "Files copied successfully (Robocopy exit code: $robocopyExitCode)" -ForegroundColor Green
-        } else {
-          Write-Error "❌ Robocopy failed with exit code: $robocopyExitCode"
-          exit 1
-        }
-      }
-      catch {
-        Write-Error "❌ Deployment failed: $_"
-        exit 1
-      }
+          - task: PowerShell@2
+            displayName: 'Deploy via Network Share'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "========================================" -ForegroundColor Cyan
+                Write-Host "Deploying Angular Frontend via Network Share" -ForegroundColor Cyan
+                Write-Host "========================================" -ForegroundColor Cyan
+                
+                $sourcePath = "$(DeployPath)"
+                $destinationPath = "\\$(vpsServer)\c$\inetpub\wwwroot\khulafx.com\secure-admin"
+                
+                Write-Host "Source: $sourcePath"
+                WriteHost "Destination: $destinationPath"
+                Write-Host ""
+                
+                # Show files being deployed
+                Write-Host "Files to deploy:"
+                Get-ChildItem -Path $sourcePath | Select-Object Name
+                Write-Host ""
+                
+                try {
+                  # Create destination directory if it doesn't exist
+                  Write-Host "Creating destination directory..." -ForegroundColor Yellow
+                  New-Item -ItemType Directory -Path $destinationPath -Force
+                  Write-Host "✅ Directory created/verified"
+                  
+                  # Take ownership and set permissions (run on target server)
+                  Write-Host "Setting permissions..." -ForegroundColor Yellow
+                  Invoke-Command -ComputerName "$(vpsServer)" -ScriptBlock {
+                    $path = "C:\inetpub\wwwroot\khulafx.com\secure-admin"
+                    icacls $path /grant "Everyone:(OI)(CI)F" /T
+                    icacls $path /grant "Users:(OI)(CI)F" /T
+                  } -Credential (New-Object System.Management.Automation.PSCredential("$(deployUser)", (ConvertTo-SecureString "$(DEPLOY_PASSWORD)" -AsPlainText -Force)))
+                  Write-Host "✅ Permissions set"
+                  
+                  # Copy files (overwrite existing)
+                  Write-Host "Copying files..." -ForegroundColor Yellow
+                  Robocopy "$sourcePath" "$destinationPath" /E /MT:8 /R:3 /W:5 /NP /NFL /NDL
+                  $robocopyExitCode = $LASTEXITCODE
+                  
+                  # Robocopy success codes: 0-7 (0=no files copied, 1=files copied, 2=extra files, etc.)
+                  if ($robocopyExitCode -le 7) {
+                    Write-Host ""
+                    Write-Host "✅ Frontend deployed successfully via network share!" -ForegroundColor Green
+                    Write-Host "Location: $destinationPath" -ForegroundColor Green
+                    Write-Host "Files copied successfully (Robocopy exit code: $robocopyExitCode)" -ForegroundColor Green
+                  } else {
+                    Write-Error "❌ Robocopy failed with exit code: $robocopyExitCode"
+                    exit 1
+                  }
+                }
+                catch {
+                  Write-Error "❌ Deployment failed: $_"
+                  exit 1
+                }
 
           - task: PowerShell@2
             displayName: 'Verify Deployment'

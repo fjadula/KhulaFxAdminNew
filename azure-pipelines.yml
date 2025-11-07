@@ -228,7 +228,7 @@ stages:
                         & $msdeploy `
                           -verb:sync `
                           -source:contentPath="$sourcePath" `
-                          -dest:contentPath='Default Web Site/secure-admin',ComputerName="https://$(vpsServer):8172/MsDeploy.axd",UserName='$(deployUser)',Password='$(DEPLOY_PASSWORD)',AuthType='Basic' `
+                          -dest:contentPath='khulafx.com/secure-admin',ComputerName="https://$(vpsServer):8172/MsDeploy.axd",UserName='$(deployUser)',Password='$(DEPLOY_PASSWORD)',AuthType='Basic' `
                           -allowUntrusted `
                           -verbose
                         
@@ -254,7 +254,7 @@ stages:
                       Start-Sleep -Seconds 10
                       
                       try {
-                        $response = Invoke-WebRequest -Uri "http://$(vpsServer)/secure-admin" -UseBasicParsing -TimeoutSec 30
+                        $response = Invoke-WebRequest -Uri "https://khulafx.com/secure-admin" -UseBasicParsing -TimeoutSec 30
                         Write-Host "✅ Frontend Status: $($response.StatusCode)" -ForegroundColor Green
                         
                         # Check for Angular index.html

@@ -4,8 +4,7 @@ import { DashboardComponent } from './dashboard/dashboard';
 import { AuthGuard } from './guards/auth-guard';
 
 export const routes: Routes = [
-	{ path: '', redirectTo: 'secure-admin', pathMatch: 'full' },
-	{ path: 'secure-admin', component: LoginComponent },
-	{ path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
-	{ path: '**', redirectTo: 'secure-admin' }
+  { path: '', component: LoginComponent },
+  { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
+  { path: '**', redirectTo: '' }
 ];

@@ -1,4 +1,6 @@
 # Azure Pipeline for KhulaFxAdminNew (Frontend Angular)
+# Uses variables from 'Deployment-Secrets' group
+
 trigger:
   branches:
     include:
@@ -92,53 +94,55 @@ stages:
                   exit 1
                 }
                 
-                $webConfig = '<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <system.webServer>
-    <rewrite>
-      <rules>
-        <rule name="Angular Routes" stopProcessing="true">
-          <match url=".*" />
-          <conditions logicalGrouping="MatchAll">
-            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-          </conditions>
-          <action type="Rewrite" url="/" />
-        </rule>
-      </rules>
-    </rewrite>
-    <httpProtocol>
-      <customHeaders>
-        <add name="X-Frame-Options" value="SAMEORIGIN" />
-        <add name="X-Content-Type-Options" value="nosniff" />
-        <add name="X-XSS-Protection" value="1; mode=block" />
-        <add name="X-Robots-Tag" value="noindex, nofollow" />
-      </customHeaders>
-    </httpProtocol>
-    <staticContent>
-      <mimeMap fileExtension=".json" mimeType="application/json" />
-      <mimeMap fileExtension=".woff2" mimeType="application/font-woff2" />
-    </staticContent>
-  </system.webServer>
-</configuration>'
+                # FIXED: Removed duplicate .woff MIME type - only .woff2
+                $webConfig = @"
+                <?xml version="1.0" encoding="utf-8"?>
+                <configuration>
+                  <system.webServer>
+                    <rewrite>
+                      <rules>
+                        <rule name="Angular Routes" stopProcessing="true">
+                          <match url=".*" />
+                          <conditions logicalGrouping="MatchAll">
+                            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+                            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+                          </conditions>
+                          <action type="Rewrite" url="/" />
+                        </rule>
+                      </rules>
+                    </rewrite>
+                    <httpProtocol>
+                      <customHeaders>
+                        <add name="X-Frame-Options" value="SAMEORIGIN" />
+                        <add name="X-Content-Type-Options" value="nosniff" />
+                        <add name="X-XSS-Protection" value="1; mode=block" />
+                        <add name="X-Robots-Tag" value="noindex, nofollow" />
+                      </customHeaders>
+                    </httpProtocol>
+                    <staticContent>
+                      <mimeMap fileExtension=".json" mimeType="application/json" />
+                      <mimeMap fileExtension=".woff2" mimeType="application/font-woff2" />
+                    </staticContent>
+                  </system.webServer>
+                </configuration>
+                "@
                 
-                $robotsTxt = 'User-agent: *
-Disallow: /
-
-User-agent: Googlebot
-Disallow: /
-
-User-agent: Bingbot
-Disallow: /
-
-User-agent: DuckDuckBot
-Disallow: /'
+                $robotsTxt = @"
+                User-agent: *
+                Disallow: /
+                
+                User-agent: Googlebot
+                Disallow: /
+                
+                User-agent: Bingbot
+                Disallow: /
+                "@
                 
                 $webConfig | Out-File -FilePath "$distPath/web.config" -Encoding utf8 -Force
                 $robotsTxt | Out-File -FilePath "$distPath/robots.txt" -Encoding utf8 -Force
                 
-                Write-Host "web.config created (FIXED - removed duplicate .woff MIME type)"
-                Write-Host "robots.txt created"
+                Write-Host "✅ web.config created (FIXED)"
+                Write-Host "✅ robots.txt created"
 
           - task: PublishBuildArtifacts@1
             displayName: 'Publish Artifacts'
@@ -181,106 +185,121 @@ Disallow: /'
                 }
 
           - task: PowerShell@2
-            displayName: 'Clean Existing web.config'
-            inputs:
-              targetType: 'inline'
-              script: |
-                $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
-                $oldWebConfig = "$destinationPath\web.config"
-                
-                if (Test-Path $oldWebConfig) {
-                  Remove-Item -Path $oldWebConfig -Force
-                  Write-Host "Removed old web.config to prevent configuration errors"
-                }
-
-          - task: PowerShell@2
             displayName: 'Deploy via Network Share'
             inputs:
               targetType: 'inline'
               script: |
-                Write-Host "Deploying Angular Frontend via Network Share"
+                Write-Host "========================================" -ForegroundColor Cyan
+                Write-Host "Deploying Angular Frontend" -ForegroundColor Cyan
+                Write-Host "========================================" -ForegroundColor Cyan
                 
                 $sourcePath = "$(DeployPath)"
+                # CORRECT path to secure-admin application folder
                 $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
                 
-                Write-Host "Source: $sourcePath"
-                Write-Host "Destination: $destinationPath"
+                Write-Host "Source: $sourcePath" -ForegroundColor White
+                Write-Host "Destination: $destinationPath" -ForegroundColor White
+                Write-Host ""
                 
                 try {
-                  New-Item -ItemType Directory -Path $destinationPath -Force
-                  Write-Host "Directory created/verified"
+                  # Ensure directory exists
+                  if (-not (Test-Path $destinationPath)) {
+                    New-Item -ItemType Directory -Path $destinationPath -Force | Out-Null
+                    Write-Host "✅ Created directory" -ForegroundColor Green
+                  }
                   
-                  Remove-Item -Path "$destinationPath\*" -Recurse -Force -ErrorAction SilentlyContinue
-                  Write-Host "Destination cleaned"
+                  # Clean existing files
+                  Write-Host "Cleaning destination..." -ForegroundColor Yellow
+                  Get-ChildItem -Path $destinationPath -Exclude "web.config.bak" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
                   
+                  # Copy all files
+                  Write-Host "Copying files..." -ForegroundColor Yellow
                   Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force
                   
-                  Write-Host "Frontend deployed successfully!"
-                  Write-Host "Location: $destinationPath"
+                  # Verify deployment
+                  $deployedFiles = Get-ChildItem -Path $destinationPath -Recurse -File
+                  Write-Host ""
+                  Write-Host "========================================" -ForegroundColor Green
+                  Write-Host "✅ Deployment Complete!" -ForegroundColor Green
+                  Write-Host "========================================" -ForegroundColor Green
+                  Write-Host "Files deployed: $($deployedFiles.Count)" -ForegroundColor Cyan
+                  Write-Host "Location: $destinationPath" -ForegroundColor Cyan
+                  Write-Host ""
                   
-                  $sourceFiles = Get-ChildItem -Path $sourcePath -Recurse -File
-                  $destFiles = Get-ChildItem -Path $destinationPath -Recurse -File
-                  Write-Host "Source files: $($sourceFiles.Count)"
-                  Write-Host "Destination files: $($destFiles.Count)"
+                  # Verify key files
+                  $indexExists = Test-Path "$destinationPath\index.html"
+                  $webConfigExists = Test-Path "$destinationPath\web.config"
+                  $robotsExists = Test-Path "$destinationPath\robots.txt"
                   
-                  if ($destFiles.Count -gt 0) {
-                    Write-Host "Deployment verified - files are in correct location"
-                  } else {
-                    Write-Error "No files found in destination - deployment failed"
+                  Write-Host "Key files check:" -ForegroundColor Yellow
+                  Write-Host "  ✅ index.html: $(if($indexExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($indexExists){'Green'}else{'Red'})
+                  Write-Host "  ✅ web.config: $(if($webConfigExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($webConfigExists){'Green'}else{'Red'})
+                  Write-Host "  ✅ robots.txt: $(if($robotsExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($robotsExists){'Green'}else{'Red'})
+                  
+                  if (-not $indexExists) {
+                    Write-Error "Critical: index.html is missing!"
                     exit 1
                   }
                 }
                 catch {
-                  Write-Error "Deployment failed: $_"
+                  Write-Host "========================================" -ForegroundColor Red
+                  Write-Host "❌ Deployment Failed!" -ForegroundColor Red
+                  Write-Host "========================================" -ForegroundColor Red
+                  Write-Error $_.Exception.Message
                   exit 1
                 }
 
           - task: PowerShell@2
-            displayName: 'Verify Files Deployed'
+            displayName: 'Verify Website'
             inputs:
               targetType: 'inline'
               script: |
-                Write-Host "Checking deployed files..."
+                Write-Host "Waiting for IIS to update..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 8
                 
-                $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
+                Write-Host "Testing website accessibility..." -ForegroundColor Yellow
+                Write-Host ""
                 
-                Write-Host "Checking: $destinationPath"
-                $files = Get-ChildItem -Path $destinationPath -Recurse -File
-                
-                if ($files.Count -gt 0) {
-                  Write-Host "SUCCESS: $($files.Count) files deployed"
-                } else {
-                  Write-Error "FAILED: No files found in destination"
-                  exit 1
-                }
-
-          - task: PowerShell@2
-            displayName: 'Test Website'
-            inputs:
-              targetType: 'inline'
-              script: |
-                Write-Host "Testing website..."
-                Start-Sleep -Seconds 10
-                
-                $urlsToTest = @("https://khulafx.com/secure-admin", "http://khulafx.com/secure-admin")
+                $urls = @(
+                  "https://khulafx.com/secure-admin",
+                  "http://khulafx.com/secure-admin",
+                  "http://$(vpsServer)/secure-admin"
+                )
                 
                 $success = $false
-                foreach ($url in $urlsToTest) {
+                foreach ($url in $urls) {
                   try {
-                    Write-Host "Testing: $url"
-                    $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
-                    Write-Host "Website Status: $($response.StatusCode)"
+                    Write-Host "Testing: $url" -ForegroundColor Gray
+                    $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+                    Write-Host "  ✅ Status: $($response.StatusCode)" -ForegroundColor Green
+                    
+                    # Check if it's actually Angular
+                    if ($response.Content -like "*<app-root>*" -or $response.Content -like "*angular*") {
+                      Write-Host "  ✅ Angular app detected" -ForegroundColor Green
+                    }
+                    
                     $success = $true
                     break
                   }
                   catch {
-                    Write-Host "$url returned: $($_.Exception.Message)"
+                    Write-Host "  ⚠️ $($_.Exception.Message)" -ForegroundColor Yellow
                   }
                 }
                 
-                if (-not $success) {
-                  Write-Warning "Website might still be configuring..."
-                  Write-Host "BUT: Files are deployed to correct IIS location: TRADERVPS\Sites\khulafx.com\secure-admin"
+                Write-Host ""
+                if ($success) {
+                  Write-Host "========================================" -ForegroundColor Green
+                  Write-Host "✅ Website is Live and Accessible!" -ForegroundColor Green
+                  Write-Host "========================================" -ForegroundColor Green
+                } else {
+                  Write-Warning "Website not accessible yet via HTTP"
+                  Write-Host "Files are deployed correctly to:" -ForegroundColor Cyan
+                  Write-Host "  C:\TRADERVPS\Sites\khulafx.com\secure-admin\" -ForegroundColor White
+                  Write-Host ""
+                  Write-Host "If website still doesn't work, check:" -ForegroundColor Yellow
+                  Write-Host "  1. IIS Application Pool is running" -ForegroundColor White
+                  Write-Host "  2. Firewall allows port 80/443" -ForegroundColor White
+                  Write-Host "  3. DNS points to VPS" -ForegroundColor White
                 }
 
   - stage: NotifyComplete

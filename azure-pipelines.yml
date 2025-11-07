@@ -101,61 +101,60 @@ stages:
                   exit 1
                 }
                 
-                # Create web.config for Angular routing
+                # Create CORRECTED web.config for Angular routing (without duplicate .woff MIME type)
                 $webConfig = @"
-                <?xml version="1.0" encoding="utf-8"?>
-                <configuration>
-                  <system.webServer>
-                    <rewrite>
-                      <rules>
-                        <rule name="Angular Routes" stopProcessing="true">
-                          <match url=".*" />
-                          <conditions logicalGrouping="MatchAll">
-                            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-                            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-                          </conditions>
-                          <action type="Rewrite" url="/" />
-                        </rule>
-                      </rules>
-                    </rewrite>
-                    <httpProtocol>
-                      <customHeaders>
-                        <add name="X-Frame-Options" value="SAMEORIGIN" />
-                        <add name="X-Content-Type-Options" value="nosniff" />
-                        <add name="X-XSS-Protection" value="1; mode=block" />
-                        <add name="X-Robots-Tag" value="noindex, nofollow" />
-                      </customHeaders>
-                    </httpProtocol>
-                    <staticContent>
-                      <mimeMap fileExtension=".json" mimeType="application/json" />
-                      <mimeMap fileExtension=".woff" mimeType="application/font-woff" />
-                      <mimeMap fileExtension=".woff2" mimeType="application/font-woff2" />
-                    </staticContent>
-                  </system.webServer>
-                </configuration>
-                "@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <rules>
+        <rule name="Angular Routes" stopProcessing="true">
+          <match url=".*" />
+          <conditions logicalGrouping="MatchAll">
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+          </conditions>
+          <action type="Rewrite" url="/" />
+        </rule>
+      </rules>
+    </rewrite>
+    <httpProtocol>
+      <customHeaders>
+        <add name="X-Frame-Options" value="SAMEORIGIN" />
+        <add name="X-Content-Type-Options" value="nosniff" />
+        <add name="X-XSS-Protection" value="1; mode=block" />
+        <add name="X-Robots-Tag" value="noindex, nofollow" />
+      </customHeaders>
+    </httpProtocol>
+    <staticContent>
+      <mimeMap fileExtension=".json" mimeType="application/json" />
+      <mimeMap fileExtension=".woff2" mimeType="application/font-woff2" />
+    </staticContent>
+  </system.webServer>
+</configuration>
+"@
                 
                 # Create robots.txt to block search engines
                 $robotsTxt = @"
-                User-agent: *
-                Disallow: /
+User-agent: *
+Disallow: /
+
+User-agent: Googlebot
+Disallow: /
+
+User-agent: Bingbot
+Disallow: /
+
+User-agent: DuckDuckBot
+Disallow: /
+"@
                 
-                User-agent: Googlebot
-                Disallow: /
+                # Save files (overwrite existing)
+                $webConfig | Out-File -FilePath "$distPath/web.config" -Encoding utf8 -Force
+                $robotsTxt | Out-File -FilePath "$distPath/robots.txt" -Encoding utf8 -Force
                 
-                User-agent: Bingbot
-                Disallow: /
-                
-                User-agent: DuckDuckBot
-                Disallow: /
-                "@
-                
-                # Save files
-                $webConfig | Out-File -FilePath "$distPath/web.config" -Encoding utf8
-                $robotsTxt | Out-File -FilePath "$distPath/robots.txt" -Encoding utf8
-                
-                Write-Host "✅ web.config created"
-                Write-Host "✅ robots.txt created"
+                Write-Host "✅ web.config created (FIXED - removed duplicate .woff MIME type)" -ForegroundColor Green
+                Write-Host "✅ robots.txt created" -ForegroundColor Green
                 
                 # Show what we're deploying
                 Write-Host "`nFiles to deploy:"
@@ -204,6 +203,19 @@ stages:
                 }
 
           - task: PowerShell@2
+            displayName: 'Clean Existing web.config'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
+                $oldWebConfig = "$destinationPath\web.config"
+                
+                if (Test-Path $oldWebConfig) {
+                  Remove-Item -Path $oldWebConfig -Force
+                  Write-Host "✅ Removed old web.config to prevent configuration errors" -ForegroundColor Green
+                }
+
+          - task: PowerShell@2
             displayName: 'Deploy via Network Share'
             inputs:
               targetType: 'inline'
@@ -230,7 +242,7 @@ stages:
                   New-Item -ItemType Directory -Path $destinationPath -Force
                   Write-Host "✅ Directory created/verified"
                   
-                  # Clean existing files first (optional - remove if you want to keep existing files)
+                  # Clean existing files first
                   Write-Host "Cleaning destination directory..." -ForegroundColor Yellow
                   Remove-Item -Path "$destinationPath\*" -Recurse -Force -ErrorAction SilentlyContinue
                   Write-Host "✅ Destination cleaned"

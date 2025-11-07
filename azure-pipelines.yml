@@ -230,19 +230,26 @@ stages:
                   New-Item -ItemType Directory -Path $destinationPath -Force
                   Write-Host "✅ Directory created/verified"
                   
-                  # Take ownership and set permissions (run on target server)
-                  Write-Host "Setting permissions..." -ForegroundColor Yellow
-                  Invoke-Command -ComputerName "$(vpsServer)" -ScriptBlock {
-                    $path = "C:\inetpub\wwwroot\khulafx.com\secure-admin"
-                    icacls $path /grant "Everyone:(OI)(CI)F" /T
-                    icacls $path /grant "Users:(OI)(CI)F" /T
-                  } -Credential (New-Object System.Management.Automation.PSCredential("$(deployUser)", (ConvertTo-SecureString "$(DEPLOY_PASSWORD)" -AsPlainText -Force)))
-                  Write-Host "✅ Permissions set"
+                  # Use Robocopy with retry logic (handles permission issues better)
+                  Write-Host "Copying files with Robocopy..." -ForegroundColor Yellow
+                  $robocopyExitCode = 0
+                  $attempt = 1
+                  $maxAttempts = 3
                   
-                  # Copy files (overwrite existing)
-                  Write-Host "Copying files..." -ForegroundColor Yellow
-                  Robocopy "$sourcePath" "$destinationPath" /E /MT:8 /R:3 /W:5 /NP /NFL /NDL
-                  $robocopyExitCode = $LASTEXITCODE
+                  do {
+                    Write-Host "Attempt $attempt of $maxAttempts..." -ForegroundColor Gray
+                    Robocopy "$sourcePath" "$destinationPath" /E /MT:8 /R:3 /W:5 /NP /NFL /NDL
+                    $robocopyExitCode = $LASTEXITCODE
+                    $attempt++
+                    
+                    if ($robocopyExitCode -gt 7) {
+                      Write-Host "Robocopy failed with exit code: $robocopyExitCode" -ForegroundColor Yellow
+                      if ($attempt -le $maxAttempts) {
+                        Write-Host "Retrying in 5 seconds..." -ForegroundColor Yellow
+                        Start-Sleep -Seconds 5
+                      }
+                    }
+                  } while ($robocopyExitCode -gt 7 -and $attempt -le $maxAttempts)
                   
                   # Robocopy success codes: 0-7 (0=no files copied, 1=files copied, 2=extra files, etc.)
                   if ($robocopyExitCode -le 7) {
@@ -251,7 +258,7 @@ stages:
                     Write-Host "Location: $destinationPath" -ForegroundColor Green
                     Write-Host "Files copied successfully (Robocopy exit code: $robocopyExitCode)" -ForegroundColor Green
                   } else {
-                    Write-Error "❌ Robocopy failed with exit code: $robocopyExitCode"
+                    Write-Error "❌ Robocopy failed after $maxAttempts attempts with exit code: $robocopyExitCode"
                     exit 1
                   }
                 }

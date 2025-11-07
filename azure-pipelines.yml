@@ -1,5 +1,6 @@
 # Azure Pipeline for KhulaFxAdminNew (Frontend Angular)
 # Uses variables from 'Deployment-Secrets' group
+# Base Href: /secure-admin/
 
 trigger:
   branches:
@@ -52,7 +53,7 @@ stages:
           - task: NodeTool@0
             displayName: 'Install Node.js'
             inputs:
-              versionSpec: $(nodeVersion)
+              versionSpec: '20.x'
 
           - task: PowerShell@2
             displayName: 'Set Node Memory Limit'
@@ -69,11 +70,11 @@ stages:
               workingDir: '.'
 
           - task: Npm@1
-            displayName: 'npm build (production)'
+            displayName: 'npm build (production with base-href)'
             inputs:
               command: 'custom'
               workingDir: '.'
-              customCommand: 'run build -- --configuration production'
+              customCommand: 'run build -- --configuration production --base-href=/secure-admin/'
 
           - task: PowerShell@2
             displayName: 'Create Configuration Files'
@@ -94,7 +95,7 @@ stages:
                   exit 1
                 }
                 
-                # FIXED: Removed duplicate .woff MIME type - only .woff2
+                # Clean web.config - NO staticContent section to avoid conflicts
                 $webConfig = @"
                 <?xml version="1.0" encoding="utf-8"?>
                 <configuration>
@@ -107,22 +108,10 @@ stages:
                             <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
                             <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
                           </conditions>
-                          <action type="Rewrite" url="/" />
+                          <action type="Rewrite" url="index.html" />
                         </rule>
                       </rules>
                     </rewrite>
-                    <httpProtocol>
-                      <customHeaders>
-                        <add name="X-Frame-Options" value="SAMEORIGIN" />
-                        <add name="X-Content-Type-Options" value="nosniff" />
-                        <add name="X-XSS-Protection" value="1; mode=block" />
-                        <add name="X-Robots-Tag" value="noindex, nofollow" />
-                      </customHeaders>
-                    </httpProtocol>
-                    <staticContent>
-                      <mimeMap fileExtension=".json" mimeType="application/json" />
-                      <mimeMap fileExtension=".woff2" mimeType="application/font-woff2" />
-                    </staticContent>
                   </system.webServer>
                 </configuration>
                 "@
@@ -141,8 +130,8 @@ stages:
                 $webConfig | Out-File -FilePath "$distPath/web.config" -Encoding utf8 -Force
                 $robotsTxt | Out-File -FilePath "$distPath/robots.txt" -Encoding utf8 -Force
                 
-                Write-Host "✅ web.config created (FIXED)"
-                Write-Host "✅ robots.txt created"
+                Write-Host "✅ Clean web.config created" -ForegroundColor Green
+                Write-Host "✅ robots.txt created" -ForegroundColor Green
 
           - task: PublishBuildArtifacts@1
             displayName: 'Publish Artifacts'
@@ -194,7 +183,6 @@ stages:
                 Write-Host "========================================" -ForegroundColor Cyan
                 
                 $sourcePath = "$(DeployPath)"
-                # CORRECT path to secure-admin application folder
                 $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
                 
                 Write-Host "Source: $sourcePath" -ForegroundColor White
@@ -208,13 +196,25 @@ stages:
                     Write-Host "✅ Created directory" -ForegroundColor Green
                   }
                   
+                  # Remove old web.config if it exists (with error handling)
+                  $webConfigPath = "$destinationPath\web.config"
+                  if (Test-Path $webConfigPath) {
+                    try {
+                      Remove-Item $webConfigPath -Force -ErrorAction Stop
+                      Write-Host "✅ Removed old web.config" -ForegroundColor Green
+                    }
+                    catch {
+                      Write-Host "⚠️ Could not remove old web.config, will overwrite: $($_.Exception.Message)" -ForegroundColor Yellow
+                    }
+                  }
+                  
                   # Clean existing files
                   Write-Host "Cleaning destination..." -ForegroundColor Yellow
-                  Get-ChildItem -Path $destinationPath -Exclude "web.config.bak" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                  Get-ChildItem -Path $destinationPath -Exclude "web.config.bak" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
                   
                   # Copy all files
                   Write-Host "Copying files..." -ForegroundColor Yellow
-                  Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force
+                  Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force -ErrorAction Stop
                   
                   # Verify deployment
                   $deployedFiles = Get-ChildItem -Path $destinationPath -Recurse -File

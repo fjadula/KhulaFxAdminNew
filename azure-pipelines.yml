@@ -1,8 +1,4 @@
 # Azure Pipeline for KhulaFxAdminNew (Frontend Angular)
-# Repository: KhulaFxAdminNew
-# Deploys to: http://108.181.161.170/secure-admin
-# SAVE THIS FILE AS: azure-pipelines.yml in KhulaFxAdminNew repository root
-
 trigger:
   branches:
     include:
@@ -38,8 +34,7 @@ stages:
                 $body = @{ chat_id = "$(TELEGRAM_CHAT_ID)"; text = $message; parse_mode = "Markdown" } | ConvertTo-Json
                 
                 try {
-                  Invoke-RestMethod -Uri "https://api.telegram.org/bot$(TELEGRAM_BOT_TOKEN)/sendMessage" `
-                    -Method Post -ContentType "application/json" -Body $body
+                  Invoke-RestMethod -Uri "https://api.telegram.org/bot$(TELEGRAM_BOT_TOKEN)/sendMessage" -Method Post -ContentType "application/json" -Body $body
                 } catch { Write-Warning "Telegram failed: $_" }
 
   - stage: Build
@@ -62,9 +57,8 @@ stages:
             inputs:
               targetType: 'inline'
               script: |
-                # Increase Node.js memory limit to prevent crashes
                 $env:NODE_OPTIONS="--max-old-space-size=4096"
-                Write-Host "✅ Set Node memory limit to 4GB"
+                Write-Host "Set Node memory limit to 4GB"
 
           - task: Npm@1
             displayName: 'npm install'
@@ -84,10 +78,7 @@ stages:
             inputs:
               targetType: 'inline'
               script: |
-                # Find the dist folder (Angular output)
-                $distFolder = Get-ChildItem -Path "$(System.DefaultWorkingDirectory)" -Filter "browser" -Recurse -Directory | 
-                              Where-Object { $_.FullName -like "*dist*" } | 
-                              Select-Object -First 1
+                $distFolder = Get-ChildItem -Path "$(System.DefaultWorkingDirectory)" -Filter "browser" -Recurse -Directory | Where-Object { $_.FullName -like "*dist*" } | Select-Object -First 1
                 
                 if (-not $distFolder) {
                   $distFolder = Get-ChildItem -Path "$(System.DefaultWorkingDirectory)/dist" -Directory | Select-Object -First 1
@@ -101,9 +92,7 @@ stages:
                   exit 1
                 }
                 
-                # Create CORRECTED web.config for Angular routing (without duplicate .woff MIME type)
-                $webConfig = @"
-<?xml version="1.0" encoding="utf-8"?>
+                $webConfig = '<?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <system.webServer>
     <rewrite>
@@ -131,12 +120,9 @@ stages:
       <mimeMap fileExtension=".woff2" mimeType="application/font-woff2" />
     </staticContent>
   </system.webServer>
-</configuration>
-"@
+</configuration>'
                 
-                # Create robots.txt to block search engines
-                $robotsTxt = @"
-User-agent: *
+                $robotsTxt = 'User-agent: *
 Disallow: /
 
 User-agent: Googlebot
@@ -146,19 +132,13 @@ User-agent: Bingbot
 Disallow: /
 
 User-agent: DuckDuckBot
-Disallow: /
-"@
+Disallow: /'
                 
-                # Save files (overwrite existing)
                 $webConfig | Out-File -FilePath "$distPath/web.config" -Encoding utf8 -Force
                 $robotsTxt | Out-File -FilePath "$distPath/robots.txt" -Encoding utf8 -Force
                 
-                Write-Host "✅ web.config created (FIXED - removed duplicate .woff MIME type)" -ForegroundColor Green
-                Write-Host "✅ robots.txt created" -ForegroundColor Green
-                
-                # Show what we're deploying
-                Write-Host "`nFiles to deploy:"
-                Get-ChildItem -Path $distPath | Select-Object Name, Length
+                Write-Host "web.config created (FIXED - removed duplicate .woff MIME type)"
+                Write-Host "robots.txt created"
 
           - task: PublishBuildArtifacts@1
             displayName: 'Publish Artifacts'
@@ -182,7 +162,6 @@ Disallow: /
             inputs:
               targetType: 'inline'
               script: |
-                # Find the actual browser folder in artifacts
                 $browserFolder = Get-ChildItem -Path "$(Pipeline.Workspace)/frontend" -Filter "browser" -Recurse -Directory | Select-Object -First 1
                 
                 if ($browserFolder) {
@@ -190,7 +169,6 @@ Disallow: /
                   Write-Host "Found browser folder: $deployPath"
                   Write-Host "##vso[task.setvariable variable=DeployPath]$deployPath"
                 } else {
-                  # Fallback to first directory
                   $firstDir = Get-ChildItem -Path "$(Pipeline.Workspace)/frontend" -Directory | Select-Object -First 1
                   if ($firstDir) {
                     $deployPath = $firstDir.FullName
@@ -212,7 +190,7 @@ Disallow: /
                 
                 if (Test-Path $oldWebConfig) {
                   Remove-Item -Path $oldWebConfig -Force
-                  Write-Host "✅ Removed old web.config to prevent configuration errors" -ForegroundColor Green
+                  Write-Host "Removed old web.config to prevent configuration errors"
                 }
 
           - task: PowerShell@2
@@ -220,57 +198,40 @@ Disallow: /
             inputs:
               targetType: 'inline'
               script: |
-                Write-Host "========================================" -ForegroundColor Cyan
-                Write-Host "Deploying Angular Frontend via Network Share" -ForegroundColor Cyan
-                Write-Host "========================================" -ForegroundColor Cyan
+                Write-Host "Deploying Angular Frontend via Network Share"
                 
                 $sourcePath = "$(DeployPath)"
                 $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
                 
                 Write-Host "Source: $sourcePath"
                 Write-Host "Destination: $destinationPath"
-                Write-Host ""
-                
-                # Show files being deployed
-                Write-Host "Files to deploy:"
-                Get-ChildItem -Path $sourcePath | Select-Object Name
-                Write-Host ""
                 
                 try {
-                  # Create destination directory if it doesn't exist
-                  Write-Host "Creating destination directory..." -ForegroundColor Yellow
                   New-Item -ItemType Directory -Path $destinationPath -Force
-                  Write-Host "✅ Directory created/verified"
+                  Write-Host "Directory created/verified"
                   
-                  # Clean existing files first
-                  Write-Host "Cleaning destination directory..." -ForegroundColor Yellow
                   Remove-Item -Path "$destinationPath\*" -Recurse -Force -ErrorAction SilentlyContinue
-                  Write-Host "✅ Destination cleaned"
+                  Write-Host "Destination cleaned"
                   
-                  # Use simple Copy-Item instead of Robocopy
-                  Write-Host "Copying files..." -ForegroundColor Yellow
                   Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force
                   
-                  Write-Host ""
-                  Write-Host "✅ Frontend deployed successfully!" -ForegroundColor Green
-                  Write-Host "Location: $destinationPath" -ForegroundColor Green
+                  Write-Host "Frontend deployed successfully!"
+                  Write-Host "Location: $destinationPath"
                   
-                  # Verify files were copied
-                  Write-Host "Verifying deployed files..." -ForegroundColor Cyan
                   $sourceFiles = Get-ChildItem -Path $sourcePath -Recurse -File
                   $destFiles = Get-ChildItem -Path $destinationPath -Recurse -File
-                  Write-Host "✅ Source files: $($sourceFiles.Count)" -ForegroundColor Green
-                  Write-Host "✅ Destination files: $($destFiles.Count)" -ForegroundColor Green
+                  Write-Host "Source files: $($sourceFiles.Count)"
+                  Write-Host "Destination files: $($destFiles.Count)"
                   
                   if ($destFiles.Count -gt 0) {
-                    Write-Host "✅ Deployment verified - files are in correct location" -ForegroundColor Green
+                    Write-Host "Deployment verified - files are in correct location"
                   } else {
-                    Write-Error "❌ No files found in destination - deployment failed"
+                    Write-Error "No files found in destination - deployment failed"
                     exit 1
                   }
                 }
                 catch {
-                  Write-Error "❌ Deployment failed: $_"
+                  Write-Error "Deployment failed: $_"
                   exit 1
                 }
 
@@ -279,7 +240,7 @@ Disallow: /
             inputs:
               targetType: 'inline'
               script: |
-                Write-Host "Checking deployed files..." -ForegroundColor Yellow
+                Write-Host "Checking deployed files..."
                 
                 $destinationPath = "\\$(vpsServer)\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
                 
@@ -287,11 +248,9 @@ Disallow: /
                 $files = Get-ChildItem -Path $destinationPath -Recurse -File
                 
                 if ($files.Count -gt 0) {
-                  Write-Host "✅ SUCCESS: $($files.Count) files deployed" -ForegroundColor Green
-                  Write-Host "Sample files:" -ForegroundColor Cyan
-                  $files | Select-Object -First 10 Name, Length
+                  Write-Host "SUCCESS: $($files.Count) files deployed"
                 } else {
-                  Write-Error "❌ FAILED: No files found in destination"
+                  Write-Error "FAILED: No files found in destination"
                   exit 1
                 }
 
@@ -300,31 +259,28 @@ Disallow: /
             inputs:
               targetType: 'inline'
               script: |
-                Write-Host "Testing website..." -ForegroundColor Yellow
+                Write-Host "Testing website..."
                 Start-Sleep -Seconds 10
                 
-                $urlsToTest = @(
-                  "https://khulafx.com/secure-admin",
-                  "http://khulafx.com/secure-admin"
-                )
+                $urlsToTest = @("https://khulafx.com/secure-admin", "http://khulafx.com/secure-admin")
                 
                 $success = $false
                 foreach ($url in $urlsToTest) {
                   try {
-                    Write-Host "Testing: $url" -ForegroundColor Gray
+                    Write-Host "Testing: $url"
                     $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
-                    Write-Host "✅ Website Status: $($response.StatusCode)" -ForegroundColor Green
+                    Write-Host "Website Status: $($response.StatusCode)"
                     $success = $true
                     break
                   }
                   catch {
-                    Write-Host "⚠️ $url returned: $($_.Exception.Message)" -ForegroundColor Yellow
+                    Write-Host "$url returned: $($_.Exception.Message)"
                   }
                 }
                 
                 if (-not $success) {
                   Write-Warning "Website might still be configuring..."
-                  Write-Host "✅ BUT: Files are deployed to correct IIS location: TRADERVPS\\Sites\\khulafx.com\\secure-admin" -ForegroundColor Green
+                  Write-Host "BUT: Files are deployed to correct IIS location: TRADERVPS\Sites\khulafx.com\secure-admin"
                 }
 
   - stage: NotifyComplete
@@ -362,6 +318,5 @@ Disallow: /
                 $body = @{ chat_id = "$(TELEGRAM_CHAT_ID)"; text = $message; parse_mode = "Markdown" } | ConvertTo-Json
                 
                 try {
-                  Invoke-RestMethod -Uri "https://api.telegram.org/bot$(TELEGRAM_BOT_TOKEN)/sendMessage" `
-                    -Method Post -ContentType "application/json" -Body $body
+                  Invoke-RestMethod -Uri "https://api.telegram.org/bot$(TELEGRAM_BOT_TOKEN)/sendMessage" -Method Post -ContentType "application/json" -Body $body
                 } catch { Write-Warning "Telegram failed: $_" }

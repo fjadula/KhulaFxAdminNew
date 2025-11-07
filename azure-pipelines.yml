@@ -10,7 +10,7 @@ trigger:
       - master
 
 pool:
-  vmImage: 'Default'
+   name: 'Default'
 
 variables:
   - group: 'Deployment-Secrets'

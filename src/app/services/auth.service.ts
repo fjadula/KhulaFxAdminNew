@@ -24,22 +24,21 @@ export class AuthService {
     return this.currentUserSubject.value;
   }
 
-login(credential: string): Observable<AuthResponse> {
-  // Change from /auth/google to /Auth/google (match Swagger)
-  return this.http.post<AuthResponse>(`${environment.apiUrl}/Auth/google`, { credential })
-    .pipe(map(response => {
-      if (response.success && response.token) {
-        const user: AdminUser = {
-          email: response.email,
-          name: response.name
-        };
-        localStorage.setItem('adminUser', JSON.stringify(user));
-        localStorage.setItem('adminToken', response.token);
-        this.currentUserSubject.next(user);
-      }
-      return response;
-    }));
-}
+  login(credential: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${environment.apiUrl}/Auth/google`, { credential })
+      .pipe(map(response => {
+        if (response.success && response.token) {
+          const user: AdminUser = {
+            email: response.email,
+            name: response.name
+          };
+          localStorage.setItem('adminUser', JSON.stringify(user));
+          localStorage.setItem('adminToken', response.token);
+          this.currentUserSubject.next(user);
+        }
+        return response;
+      }));
+  }
 
   logout(): void {
     localStorage.removeItem('adminUser');

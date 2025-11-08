@@ -4,6 +4,18 @@ trigger:
       - master
       - main
 
+resources:
+  repositories:
+    - repository: self
+      type: github
+      name: fjadula/KhulaFxAdminNew
+      endpoint: github
+      trigger:
+        branches:
+          include:
+            - master
+            - main
+
 pool:
   name: Default
 

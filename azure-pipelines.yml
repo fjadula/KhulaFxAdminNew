@@ -47,7 +47,6 @@ stages:
             inputs:
               versionSpec: '20.x'
 
-
           - task: Npm@1
             displayName: 'npm install'
             inputs:
@@ -77,7 +76,17 @@ export const environment = {
                 }
                 
                 $envContent | Out-File -FilePath $envPath -Encoding utf8 -Force
-                Write-Host "OK" -ForegroundColor Green
+                Write-Host "✅ Generated: $envPath" -ForegroundColor Green
+                Write-Host "Content:" -ForegroundColor Gray
+                Get-Content $envPath
+                
+                # Verify it exists
+                if (Test-Path $envPath) {
+                  Write-Host "✅ File verified" -ForegroundColor Green
+                } else {
+                  Write-Host "❌ File NOT created!" -ForegroundColor Red
+                  exit 1
+                }
 
           - task: Npm@1
             displayName: 'npm build'

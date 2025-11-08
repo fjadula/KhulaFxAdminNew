@@ -4,126 +4,89 @@ trigger:
       - master
       - main
 
-resources:
-  repositories:
-    - repository: self
-      type: github
-      name: fjadula/KhulaFxAdminNew
-      endpoint: github
-
 pool:
-  name: 'Default'
+  name: Default
 
 variables:
-  - group: 'Deployment-Secrets'
+  - group: Deployment-Secrets
 
 stages:
   - stage: Build
-    displayName: 'Build Angular'
+    displayName: Build Angular
     jobs:
       - job: BuildAngular
-        displayName: 'Build Angular'
         steps:
           - checkout: self
             clean: true
 
-          - task: PowerShell@2
-            displayName: 'Verify package.json'
-            inputs:
-              targetType: 'inline'
-              script: |
-                $packagePath = "$(Build.SourcesDirectory)/package.json"
-                Write-Host "Checking: $packagePath" -ForegroundColor Cyan
-                if (Test-Path $packagePath) {
-                  Write-Host "OK" -ForegroundColor Green
-                } else {
-                  Write-Host "NOT FOUND" -ForegroundColor Red
-                  Get-ChildItem -Path "$(Build.SourcesDirectory)" -Force
-                  exit 1
-                }
-
           - task: NodeTool@0
-            displayName: 'Install Node 20'
+            displayName: Install Node 20
             inputs:
-              versionSpec: '20.x'
+              versionSpec: 20.x
 
           - task: Npm@1
-            displayName: 'npm install'
+            displayName: npm install
             inputs:
-              command: 'install'
-              workingDir: '$(Build.SourcesDirectory)'
+              command: install
+              workingDir: $(Build.SourcesDirectory)
 
           - task: PowerShell@2
-            displayName: 'Generate environment.prod.ts'
+            displayName: Generate environment.prod.ts
             inputs:
-              targetType: 'inline'
+              targetType: inline
               script: |
                 $apiUrl = "$(apiUrl)"
-                Write-Host "Generating environment with API: $apiUrl" -ForegroundColor Cyan
-                
-                $envContent = @"
+                $envPath = "$(Build.SourcesDirectory)/src/environments/environment.prod.ts"
+                $envDir = Split-Path -Path $envPath
+                if (-not (Test-Path $envDir)) {
+                  New-Item -ItemType Directory -Path $envDir -Force | Out-Null
+                }
+                $env = @"
 export const environment = {
   production: true,
   apiUrl: '$apiUrl'
 };
 "@
-                
-                $envPath = "$(Build.SourcesDirectory)/src/environments/environment.prod.ts"
-                $envDir = Split-Path -Path $envPath
-                
-                if (-not (Test-Path $envDir)) {
-                  New-Item -ItemType Directory -Path $envDir -Force | Out-Null
-                }
-                
-                $envContent | Out-File -FilePath $envPath -Encoding utf8 -Force
-                Write-Host "✅ Generated: $envPath" -ForegroundColor Green
-                Write-Host "Content:" -ForegroundColor Gray
-                Get-Content $envPath
-                
-                # Verify it exists
-                if (Test-Path $envPath) {
-                  Write-Host "✅ File verified" -ForegroundColor Green
-                } else {
-                  Write-Host "❌ File NOT created!" -ForegroundColor Red
-                  exit 1
-                }
+                $env | Out-File -FilePath $envPath -Encoding utf8 -Force
+                Write-Host "Generated with API: $apiUrl" -ForegroundColor Green
 
           - task: Npm@1
-            displayName: 'npm build'
+            displayName: npm build
             inputs:
-              command: 'custom'
-              workingDir: '$(Build.SourcesDirectory)'
-              customCommand: 'run build -- --configuration production --base-href=/secure-admin/'
+              command: custom
+              workingDir: $(Build.SourcesDirectory)
+              customCommand: run build -- --configuration production --base-href=/secure-admin/
 
           - task: PublishBuildArtifacts@1
-            displayName: 'Publish'
+            displayName: Publish
             inputs:
-              pathToPublish: '$(Build.SourcesDirectory)/dist'
-              artifactName: 'frontend'
+              pathToPublish: $(Build.SourcesDirectory)/dist
+              artifactName: frontend
 
   - stage: Deploy
-    displayName: 'Deploy'
+    displayName: Deploy
     dependsOn: Build
-    condition: succeeded()
     jobs:
       - job: DeployJob
-        displayName: 'Deploy to IIS'
         steps:
           - download: current
             artifact: frontend
 
           - task: PowerShell@2
-            displayName: 'Deploy Files'
+            displayName: Deploy to IIS
             inputs:
-              targetType: 'inline'
+              targetType: inline
               script: |
                 $src = "$(Pipeline.Workspace)/frontend"
                 $vps = "$(vpsServer)"
                 $dst = "\\$vps\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
-                Write-Host "Source: $src"
-                Write-Host "Dest: $dst"
+                Write-Host "Deploying..." -ForegroundColor Cyan
                 Get-ChildItem -Path $src -Force | ForEach-Object {
-                  Copy-Item -Path $_.FullName -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
-                  Write-Host "Copied: $_"
+                  if ($_.PSIsContainer) {
+                    Copy-Item -Path $_.FullName -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
+                  } else {
+                    Copy-Item -Path $_.FullName -Destination $dst -Force -ErrorAction SilentlyContinue
+                  }
+                  Write-Host "OK: $_" -ForegroundColor Green
                 }
-                Write-Host "Done"
+                Write-Host "Done" -ForegroundColor Green

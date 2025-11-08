@@ -11,64 +11,67 @@ variables:
 stages:
   - stage: Build
     jobs:
-      - job: BuildAngular
+      - job: BuildBackend
         steps:
           - checkout: self
 
-          - task: NodeTool@0
+          - task: UseDotNet@2
+            displayName: Install .NET 8
             inputs:
-              versionSpec: 20.x
+              version: 8.x
+              packageType: sdk
 
-          - task: Npm@1
+          - task: DotNetCoreCLI@2
+            displayName: Restore NuGet packages
             inputs:
-              command: install
+              command: restore
+              projects: |
+                $(Build.SourcesDirectory)/KhulaFxTradeMonitor/KhulaFxTradeMonitor.csproj
+                $(Build.SourcesDirectory)/KhulaFxAdmin/KhulaFxAdmin.csproj
 
-          - task: Npm@1
+          - task: DotNetCoreCLI@2
+            displayName: Build KhulaFxTradeMonitor
             inputs:
-              command: custom
-              customCommand: run build -- --configuration production --base-href=/secure-admin/
+              command: build
+              projects: $(Build.SourcesDirectory)/KhulaFxTradeMonitor/KhulaFxTradeMonitor.csproj
+              arguments: --configuration Release --no-restore
 
-          - task: PowerShell@2
-            displayName: Find dist folder
+          - task: DotNetCoreCLI@2
+            displayName: Build KhulaFxAdmin
             inputs:
-              targetType: inline
-              script: |
-                $browserFolder = Get-ChildItem -Path "$(Build.SourcesDirectory)/dist" -Filter "browser" -Recurse -Directory | Select-Object -First 1
-                if ($browserFolder) {
-                  Write-Host "Found browser folder: $($browserFolder.FullName)"
-                  Write-Host "##vso[task.setvariable variable=DistPath]$($browserFolder.FullName)"
-                } else {
-                  $distFolder = Get-ChildItem -Path "$(Build.SourcesDirectory)/dist" -Directory | Select-Object -First 1
-                  if ($distFolder) {
-                    Write-Host "Using dist folder: $($distFolder.FullName)"
-                    Write-Host "##vso[task.setvariable variable=DistPath]$($distFolder.FullName)"
-                  } else {
-                    Write-Error "No dist folder found"
-                    exit 1
-                  }
-                }
+              command: build
+              projects: $(Build.SourcesDirectory)/KhulaFxAdmin/KhulaFxAdmin.csproj
+              arguments: --configuration Release --no-restore
+
+          - task: DotNetCoreCLI@2
+            displayName: Publish KhulaFxAdmin
+            inputs:
+              command: publish
+              projects: $(Build.SourcesDirectory)/KhulaFxAdmin/KhulaFxAdmin.csproj
+              arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)
 
           - task: PublishBuildArtifacts@1
+            displayName: Publish Artifacts
             inputs:
-              pathToPublish: $(DistPath)
-              artifactName: frontend
+              pathToPublish: $(Build.ArtifactStagingDirectory)
+              artifactName: backend
 
   - stage: Deploy
     dependsOn: Build
     jobs:
-      - job: DeployJob
+      - job: DeployBackend
         steps:
           - download: current
-            artifact: frontend
+            artifact: backend
 
           - task: PowerShell@2
-            displayName: Deploy Files
+            displayName: Deploy to IIS
             inputs:
               targetType: inline
               script: |
-                $src = "$(Pipeline.Workspace)/frontend"
+                $src = "$(Pipeline.Workspace)/backend"
                 $vps = "$(vpsServer)"
-                $dst = "\\$vps\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
+                $dst = "\\$vps\c$\inetpub\wwwroot\khulafx.com\api"
                 
                 Write-Host "Source: $src" -ForegroundColor Cyan
                 Write-Host "Destination: $dst" -ForegroundColor Cyan
@@ -86,7 +89,9 @@ stages:
                 Write-Host "Clearing old files..." -ForegroundColor Yellow
                 $items = Get-ChildItem -Path $dst -Force -ErrorAction Continue
                 foreach ($item in $items) {
-                  Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                  if ($item.Name -ne "web.config") {
+                    Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                  }
                 }
                 
                 Write-Host "Copying new files..." -ForegroundColor Yellow
@@ -101,11 +106,4 @@ stages:
                 
                 $deployed = Get-ChildItem -Path $dst -Recurse -File
                 Write-Host "Files deployed: $($deployed.Count)" -ForegroundColor Cyan
-                
-                $indexExists = Test-Path "$dst\index.html"
-                if ($indexExists) {
-                  Write-Host "✅ index.html: FOUND" -ForegroundColor Green
-                } else {
-                  Write-Host "❌ index.html: NOT FOUND" -ForegroundColor Red
-                  exit 1
-                }
+                Write-Host "✅ Deployment Complete" -ForegroundColor Green

@@ -23,6 +23,7 @@
             ],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
+            "baseHref": "/secure-admin/",
             "assets": [
               {
                 "glob": "**/*",
@@ -61,8 +62,8 @@
           "builder": "@angular/build:dev-server",
           "options": {
             "ssl": true,
-             "sslCert": "C:\\Users\\fjadu\\aspnet-https\\cert.pem",
-    "sslKey": "C:\\Users\\fjadu\\aspnet-https\\key.pem",
+            "sslCert": "C:\\Users\\fjadu\\aspnet-https\\cert.pem",
+            "sslKey": "C:\\Users\\fjadu\\aspnet-https\\key.pem",
             "port": 4200
           },
           "configurations": {

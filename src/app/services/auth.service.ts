@@ -25,7 +25,7 @@ export class AuthService {
   }
 
   login(credential: string): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${environment.apiUrl}/Auth/google`, { credential })
+    return this.http.post<AuthResponse>(`${environment.apiUrl}/auth/google`, { credential })
       .pipe(map(response => {
         if (response.success && response.token) {
           const user: AdminUser = {

@@ -1,7 +1,5 @@
 # Azure Pipeline for KhulaFxAdminNew (Frontend Angular)
-# Uses variables from 'Deployment-Secrets' group
-# Base Href: /secure-admin/
-# Deployment Method: Network Share (Simple & Reliable)
+# Deployment: Stop App Pool → Delete Files → Copy Files → Start App Pool
 
 trigger:
   branches:
@@ -96,7 +94,6 @@ stages:
                   exit 1
                 }
                 
-                # Clean web.config - NO staticContent section to avoid conflicts
                 $webConfig = @"
                 <?xml version="1.0" encoding="utf-8"?>
                 <configuration>
@@ -198,37 +195,32 @@ stages:
                     Write-Host "✅ Created directory" -ForegroundColor Green
                   }
                   
-                  # Wait for files to be unlocked
-                  Write-Host "Waiting for file locks to release..." -ForegroundColor Yellow
-                  Start-Sleep -Seconds 2
-                  
-                  # Clean destination with retry logic
+                  # Delete all files and folders - one by one with individual error handling
                   Write-Host "Cleaning destination folder..." -ForegroundColor Yellow
-                  $retryCount = 0
-                  $maxRetries = 3
+                  $itemsToDelete = Get-ChildItem -Path $destinationPath -Force -ErrorAction SilentlyContinue
                   
-                  while ($retryCount -lt $maxRetries) {
+                  $deletedCount = 0
+                  foreach ($item in $itemsToDelete) {
                     try {
-                      Get-ChildItem -Path $destinationPath -Recurse -File -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction Stop
-                      Get-ChildItem -Path $destinationPath -Recurse -Directory -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction Stop
-                      Write-Host "✅ Destination cleaned" -ForegroundColor Green
-                      break
-                    }
-                    catch {
-                      $retryCount++
-                      if ($retryCount -lt $maxRetries) {
-                        Write-Host "⚠️ Retry $retryCount/$maxRetries - waiting for locks to release..." -ForegroundColor Yellow
-                        Start-Sleep -Seconds 3
+                      if ($item.PSIsContainer) {
+                        Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
                       } else {
-                        Write-Warning "Could not fully clean destination, will overwrite files"
+                        Remove-Item -Path $item.FullName -Force -ErrorAction Stop
                       }
+                      $deletedCount++
+                    } catch {
+                      # If we can't delete it, the copy will overwrite it
+                      Write-Host "⚠️ Skipping: $($item.Name)" -ForegroundColor Yellow
                     }
                   }
+                  Write-Host "✅ Deleted $deletedCount items" -ForegroundColor Green
+                  
+                  Start-Sleep -Seconds 1
                   
                   # Copy all files
                   Write-Host "Copying files..." -ForegroundColor Yellow
                   Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force -ErrorAction Stop
-                  Write-Host "✅ Files copied" -ForegroundColor Green
+                  Write-Host "✅ Files copied successfully" -ForegroundColor Green
                   
                   # Verify deployment
                   $deployedFiles = Get-ChildItem -Path $destinationPath -Recurse -File
@@ -237,18 +229,15 @@ stages:
                   Write-Host "✅ Deployment Complete!" -ForegroundColor Green
                   Write-Host "========================================" -ForegroundColor Green
                   Write-Host "Files deployed: $($deployedFiles.Count)" -ForegroundColor Cyan
-                  Write-Host "Location: $destinationPath" -ForegroundColor Cyan
                   Write-Host ""
                   
                   # Verify key files
                   $indexExists = Test-Path "$destinationPath\index.html"
                   $webConfigExists = Test-Path "$destinationPath\web.config"
-                  $robotsExists = Test-Path "$destinationPath\robots.txt"
                   
                   Write-Host "Key files check:" -ForegroundColor Yellow
                   Write-Host "  ✅ index.html: $(if($indexExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($indexExists){'Green'}else{'Red'})
                   Write-Host "  ✅ web.config: $(if($webConfigExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($webConfigExists){'Green'}else{'Red'})
-                  Write-Host "  ✅ robots.txt: $(if($robotsExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($robotsExists){'Green'}else{'Red'})
                   
                   if (-not $indexExists) {
                     Write-Error "Critical: index.html is missing!"
@@ -271,11 +260,13 @@ stages:
                 Write-Host "Recycling IIS app pool..." -ForegroundColor Yellow
                 
                 $vpsIP = "$(vpsServer)"
-                $netshare = "\\$vpsIP\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
+                $appPoolPath = "\\$vpsIP\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
                 
                 try {
-                  $marker = Join-Path $netshare "app_restart.txt"
-                  Get-Date | Out-File -FilePath $marker -Force
+                  # Touch a file to trigger ASP.NET app pool recycle
+                  $marker = Join-Path $appPoolPath "web.config"
+                  $content = Get-Content -Path $marker -Raw
+                  $content | Out-File -FilePath $marker -Force
                   Write-Host "✅ App pool recycle triggered" -ForegroundColor Green
                   Start-Sleep -Seconds 3
                 }
@@ -306,12 +297,6 @@ stages:
                     Write-Host "Testing: $url" -ForegroundColor Gray
                     $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
                     Write-Host "  ✅ Status: $($response.StatusCode)" -ForegroundColor Green
-                    
-                    # Check if it's actually Angular
-                    if ($response.Content -like "*<app-root>*" -or $response.Content -like "*angular*") {
-                      Write-Host "  ✅ Angular app detected" -ForegroundColor Green
-                    }
-                    
                     $success = $true
                     break
                   }
@@ -327,11 +312,7 @@ stages:
                   Write-Host "========================================" -ForegroundColor Green
                   Write-Host "URL: https://khulafx.com/secure-admin" -ForegroundColor Cyan
                 } else {
-                  Write-Warning "Website not accessible yet"
-                  Write-Host "If website still doesn't work, check:" -ForegroundColor Yellow
-                  Write-Host "  1. IIS Application Pool is running" -ForegroundColor White
-                  Write-Host "  2. Firewall allows port 80/443" -ForegroundColor White
-                  Write-Host "  3. DNS points to VPS" -ForegroundColor White
+                  Write-Warning "Website not accessible"
                 }
 
   - stage: NotifyComplete
@@ -356,7 +337,6 @@ stages:
                 $message += "🔢 *Build:* $(Build.BuildNumber)`n"
                 $message += "👤 *By:* $(Build.RequestedFor)`n"
                 $message += "🌿 *Branch:* $(Build.SourceBranchName)`n"
-                $message += "💬 *Commit:* $(Build.SourceVersionMessage)`n"
                 
                 if ($success) {
                   $message += "🌐 *URL:* https://khulafx.com/secure-admin`n"

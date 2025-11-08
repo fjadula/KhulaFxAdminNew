@@ -1,20 +1,6 @@
 trigger:
-  branches:
-    include:
-      - master
-      - main
-
-resources:
-  repositories:
-    - repository: self
-      type: github
-      name: fjadula/KhulaFxAdminNew
-      endpoint: github
-      trigger:
-        branches:
-          include:
-            - master
-            - main
+  - master
+  - main
 
 pool:
   name: Default
@@ -24,59 +10,30 @@ variables:
 
 stages:
   - stage: Build
-    displayName: Build Angular
     jobs:
       - job: BuildAngular
         steps:
           - checkout: self
-            clean: true
 
           - task: NodeTool@0
-            displayName: Install Node 20
             inputs:
               versionSpec: 20.x
 
           - task: Npm@1
-            displayName: npm install
             inputs:
               command: install
-              workingDir: $(Build.SourcesDirectory)
-
-          - task: PowerShell@2
-            displayName: Generate environment.prod.ts
-            inputs:
-              targetType: inline
-              script: |
-                $apiUrl = "$(apiUrl)"
-                $envPath = "$(Build.SourcesDirectory)/src/environments/environment.prod.ts"
-                $envDir = Split-Path -Path $envPath
-                if (-not (Test-Path $envDir)) {
-                  New-Item -ItemType Directory -Path $envDir -Force | Out-Null
-                }
-                $env = @"
-export const environment = {
-  production: true,
-  apiUrl: '$apiUrl'
-};
-"@
-                $env | Out-File -FilePath $envPath -Encoding utf8 -Force
-                Write-Host "Generated with API: $apiUrl" -ForegroundColor Green
 
           - task: Npm@1
-            displayName: npm build
             inputs:
               command: custom
-              workingDir: $(Build.SourcesDirectory)
               customCommand: run build -- --configuration production --base-href=/secure-admin/
 
           - task: PublishBuildArtifacts@1
-            displayName: Publish
             inputs:
               pathToPublish: $(Build.SourcesDirectory)/dist
               artifactName: frontend
 
   - stage: Deploy
-    displayName: Deploy
     dependsOn: Build
     jobs:
       - job: DeployJob
@@ -85,20 +42,12 @@ export const environment = {
             artifact: frontend
 
           - task: PowerShell@2
-            displayName: Deploy to IIS
             inputs:
               targetType: inline
               script: |
                 $src = "$(Pipeline.Workspace)/frontend"
                 $vps = "$(vpsServer)"
                 $dst = "\\$vps\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
-                Write-Host "Deploying..." -ForegroundColor Cyan
                 Get-ChildItem -Path $src -Force | ForEach-Object {
-                  if ($_.PSIsContainer) {
-                    Copy-Item -Path $_.FullName -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
-                  } else {
-                    Copy-Item -Path $_.FullName -Destination $dst -Force -ErrorAction SilentlyContinue
-                  }
-                  Write-Host "OK: $_" -ForegroundColor Green
+                  Copy-Item -Path $_.FullName -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
                 }
-                Write-Host "Done" -ForegroundColor Green

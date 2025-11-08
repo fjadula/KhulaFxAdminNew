@@ -42,20 +42,7 @@ stages:
             artifact: frontend
 
           - task: PowerShell@2
-            displayName: Debug - List Downloaded Files
-            inputs:
-              targetType: inline
-              script: |
-                $artifactPath = "$(Pipeline.Workspace)/frontend"
-                Write-Host "Artifact path: $artifactPath" -ForegroundColor Cyan
-                Write-Host "Contents:" -ForegroundColor Yellow
-                Get-ChildItem -Path $artifactPath -Recurse -Force | Select-Object -First 20
-                Write-Host ""
-                $allFiles = Get-ChildItem -Path $artifactPath -Recurse -File
-                Write-Host "Total files: $($allFiles.Count)" -ForegroundColor Green
-
-          - task: PowerShell@2
-            displayName: Deploy Files to VPS
+            displayName: Deploy Files
             inputs:
               targetType: inline
               script: |
@@ -63,125 +50,40 @@ stages:
                 $vps = "$(vpsServer)"
                 $dst = "\\$vps\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
                 
-                Write-Host "Deploying..." -ForegroundColor Cyan
-                Write-Host "Source: $src" -ForegroundColor White
-                Write-Host "VPS: $vps" -ForegroundColor White
-                Write-Host "Destination: $dst" -ForegroundColor White
+                Write-Host "Source: $src" -ForegroundColor Cyan
+                Write-Host "Destination: $dst" -ForegroundColor Cyan
                 
                 if (-not (Test-Path $src)) {
-                  Write-Error "Source not found: $src"
+                  Write-Error "Source not found"
                   exit 1
                 }
                 
                 if (-not (Test-Path $dst)) {
-                  Write-Error "Destination not accessible: $dst"
+                  Write-Error "Destination not accessible"
                   exit 1
                 }
                 
-                Write-Host "Clearing old files..." -ForegroundColor Yellow
                 $items = Get-ChildItem -Path $dst -Force -ErrorAction Continue
                 foreach ($item in $items) {
                   Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
-                  Write-Host "  Deleted: $($item.Name)"
                 }
                 
-                Write-Host "`nCopying new files..." -ForegroundColor Yellow
-                $copied = 0
-                $items = Get-ChildItem -Path $src -Force
-                foreach ($item in $items) {
-                  try {
-                    if ($item.PSIsContainer) {
-                      Copy-Item -Path $item.FullName -Destination $dst -Recurse -Force
-                    } else {
-                      Copy-Item -Path $item.FullName -Destination $dst -Force
-                    }
-                    Write-Host "  OK: $($item.Name)" -ForegroundColor Green
-                    $copied++
-                  } catch {
-                    Write-Host "  ERROR: $($item.Name) - $_" -ForegroundColor Red
+                Get-ChildItem -Path $src -Force | ForEach-Object {
+                  if ($_.PSIsContainer) {
+                    Copy-Item -Path $_.FullName -Destination $dst -Recurse -Force
+                  } else {
+                    Copy-Item -Path $_.FullName -Destination $dst -Force
                   }
+                  Write-Host "Copied: $($_.Name)" -ForegroundColor Green
                 }
-                
-                Write-Host "`n========================================" -ForegroundColor Green
-                Write-Host "Deployment Status" -ForegroundColor Green
-                Write-Host "========================================" -ForegroundColor Green
                 
                 $deployed = Get-ChildItem -Path $dst -Recurse -File
                 Write-Host "Files deployed: $($deployed.Count)" -ForegroundColor Cyan
                 
                 $indexExists = Test-Path "$dst\index.html"
-                $webConfigExists = Test-Path "$dst\web.config"
-                
-                Write-Host "index.html: $(if($indexExists){'✅ FOUND'}else{'❌ MISSING'})" -ForegroundColor $(if($indexExists){'Green'}else{'Red'})
-                Write-Host "web.config: $(if($webConfigExists){'✅ FOUND'}else{'❌ MISSING'})" -ForegroundColor $(if($webConfigExists){'Green'}else{'Red'})
-                
-                if (-not $indexExists) {
-                  Write-Error "index.html NOT deployed!"
+                if ($indexExists) {
+                  Write-Host "index.html: FOUND" -ForegroundColor Green
+                } else {
+                  Write-Error "index.html NOT found"
                   exit 1
                 }
-
-          - task: PowerShell@2
-            displayName: Create web.config
-            inputs:
-              targetType: inline
-              script: |
-                $vps = "$(vpsServer)"
-                $dst = "\\$vps\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
-                
-                $webConfig = @"
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <system.webServer>
-    <staticContent>
-      <mimeMap fileExtension=".js" mimeType="application/javascript" />
-    </staticContent>
-    <rewrite>
-      <rules>
-        <rule name="Angular Routes" stopProcessing="true">
-          <match url=".*" />
-          <conditions logicalGrouping="MatchAll">
-            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-          </conditions>
-          <action type="Rewrite" url="index.html" />
-        </rule>
-      </rules>
-    </rewrite>
-  </system.webServer>
-</configuration>
-"@
-                
-                $webConfigPath = "$dst\web.config"
-                $webConfig | Out-File -FilePath $webConfigPath -Encoding utf8 -Force
-                Write-Host "✅ web.config created at: $webConfigPath" -ForegroundColor Green
-
-          - task: PowerShell@2
-            displayName: Verify Deployment
-            inputs:
-              targetType: inline
-              script: |
-                $vps = "$(vpsServer)"
-                $dst = "\\$vps\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
-                
-                Write-Host "Final Verification:" -ForegroundColor Cyan
-                Write-Host ""
-                
-                $files = Get-ChildItem -Path $dst -Recurse -File
-                Write-Host "Total files at destination: $($files.Count)" -ForegroundColor Cyan
-                
-                Write-Host "`nKey files:" -ForegroundColor Yellow
-                $keyFiles = @("index.html", "web.config", "main*.js", "styles*.css")
-                foreach ($pattern in $keyFiles) {
-                  $found = Get-ChildItem -Path $dst -Filter $pattern -Recurse -File -ErrorAction SilentlyContinue
-                  if ($found) {
-                    Write-Host "  ✅ $pattern - $($found.Count) found" -ForegroundColor Green
-                  } else {
-                    Write-Host "  ⚠️ $pattern - not found" -ForegroundColor Yellow
-                  }
-                }
-                
-                Write-Host ""
-                Write-Host "========================================" -ForegroundColor Green
-                Write-Host "✅ Deployment Complete!" -ForegroundColor Green
-                Write-Host "========================================" -ForegroundColor Green
-                Write-Host "URL: https://khulafx.com/secure-admin" -ForegroundColor Cyan

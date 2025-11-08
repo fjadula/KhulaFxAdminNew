@@ -28,9 +28,29 @@ stages:
               command: custom
               customCommand: run build -- --configuration production --base-href=/secure-admin/
 
+          - task: PowerShell@2
+            displayName: Find dist folder
+            inputs:
+              targetType: inline
+              script: |
+                $browserFolder = Get-ChildItem -Path "$(Build.SourcesDirectory)/dist" -Filter "browser" -Recurse -Directory | Select-Object -First 1
+                if ($browserFolder) {
+                  Write-Host "Found browser folder: $($browserFolder.FullName)"
+                  Write-Host "##vso[task.setvariable variable=DistPath]$($browserFolder.FullName)"
+                } else {
+                  $distFolder = Get-ChildItem -Path "$(Build.SourcesDirectory)/dist" -Directory | Select-Object -First 1
+                  if ($distFolder) {
+                    Write-Host "Using dist folder: $($distFolder.FullName)"
+                    Write-Host "##vso[task.setvariable variable=DistPath]$($distFolder.FullName)"
+                  } else {
+                    Write-Error "No dist folder found"
+                    exit 1
+                  }
+                }
+
           - task: PublishBuildArtifacts@1
             inputs:
-              pathToPublish: $(Build.SourcesDirectory)/dist
+              pathToPublish: $(DistPath)
               artifactName: frontend
 
   - stage: Deploy
@@ -63,18 +83,20 @@ stages:
                   exit 1
                 }
                 
+                Write-Host "Clearing old files..." -ForegroundColor Yellow
                 $items = Get-ChildItem -Path $dst -Force -ErrorAction Continue
                 foreach ($item in $items) {
                   Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
                 }
                 
+                Write-Host "Copying new files..." -ForegroundColor Yellow
                 Get-ChildItem -Path $src -Force | ForEach-Object {
                   if ($_.PSIsContainer) {
                     Copy-Item -Path $_.FullName -Destination $dst -Recurse -Force
                   } else {
                     Copy-Item -Path $_.FullName -Destination $dst -Force
                   }
-                  Write-Host "Copied: $($_.Name)" -ForegroundColor Green
+                  Write-Host "  OK: $($_.Name)" -ForegroundColor Green
                 }
                 
                 $deployed = Get-ChildItem -Path $dst -Recurse -File
@@ -82,8 +104,8 @@ stages:
                 
                 $indexExists = Test-Path "$dst\index.html"
                 if ($indexExists) {
-                  Write-Host "index.html: FOUND" -ForegroundColor Green
+                  Write-Host "✅ index.html: FOUND" -ForegroundColor Green
                 } else {
-                  Write-Error "index.html NOT found"
+                  Write-Host "❌ index.html: NOT FOUND" -ForegroundColor Red
                   exit 1
                 }

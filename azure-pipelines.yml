@@ -47,6 +47,7 @@ stages:
             inputs:
               versionSpec: '20.x'
 
+
           - task: Npm@1
             displayName: 'npm install'
             inputs:

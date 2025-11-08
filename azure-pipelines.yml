@@ -53,6 +53,31 @@ stages:
               command: 'install'
               workingDir: '$(Build.SourcesDirectory)'
 
+          - task: PowerShell@2
+            displayName: 'Generate environment.prod.ts'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $apiUrl = "$(apiUrl)"
+                Write-Host "Generating environment with API: $apiUrl" -ForegroundColor Cyan
+                
+                $envContent = @"
+export const environment = {
+  production: true,
+  apiUrl: '$apiUrl'
+};
+"@
+                
+                $envPath = "$(Build.SourcesDirectory)/src/environments/environment.prod.ts"
+                $envDir = Split-Path -Path $envPath
+                
+                if (-not (Test-Path $envDir)) {
+                  New-Item -ItemType Directory -Path $envDir -Force | Out-Null
+                }
+                
+                $envContent | Out-File -FilePath $envPath -Encoding utf8 -Force
+                Write-Host "OK" -ForegroundColor Green
+
           - task: Npm@1
             displayName: 'npm build'
             inputs:

@@ -3,14 +3,11 @@ import { LoginComponent } from './login/login';
 import { DashboardComponent } from './dashboard/dashboard';
 import { AuthGuard } from './guards/auth-guard';
 
-// App routes
-// - Default redirects to /secure-admin (login)
-// - /secure-admin: LoginComponent
-// - /dashboard: Protected dashboard
-// - Wildcard redirects to /secure-admin
+// Base-href aware routing
+// When base href is "/secure-admin/", the empty path ('') maps to that base path.
+// So we render LoginComponent for '' and keep dashboard as a child path.
 export const routes: Routes = [
-  { path: '', redirectTo: 'secure-admin', pathMatch: 'full' },
-  { path: 'secure-admin', component: LoginComponent },
+  { path: '', component: LoginComponent, pathMatch: 'full' },
   { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
-  { path: '**', redirectTo: 'secure-admin' }
+  { path: '**', redirectTo: '' }
 ];

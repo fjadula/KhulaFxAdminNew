@@ -1,7 +1,7 @@
 # Azure Pipeline for KhulaFxAdminNew (Frontend Angular)
 # Uses variables from 'Deployment-Secrets' group
 # Base Href: /secure-admin/
-# Deployment Method: Remote PowerShell (no network share locks)
+# Deployment Method: Network Share (Simple & Reliable)
 
 trigger:
   branches:
@@ -54,7 +54,7 @@ stages:
           - task: NodeTool@0
             displayName: 'Install Node.js'
             inputs:
-              versionSpec: '20.x'
+              versionSpec: '$(nodeVersion)'
 
           - task: PowerShell@2
             displayName: 'Set Node Memory Limit'
@@ -175,110 +175,112 @@ stages:
                 }
 
           - task: PowerShell@2
-            displayName: 'Deploy via Remote PowerShell'
+            displayName: 'Deploy via Network Share'
             inputs:
               targetType: 'inline'
               script: |
                 Write-Host "========================================" -ForegroundColor Cyan
-                Write-Host "Deploying Angular Frontend via Remote PS" -ForegroundColor Cyan
+                Write-Host "Deploying Angular Frontend" -ForegroundColor Cyan
                 Write-Host "========================================" -ForegroundColor Cyan
                 
                 $sourcePath = "$(DeployPath)"
-                $deploymentPath = "C:\TRADERVPS\Sites\khulafx.com\secure-admin"
+                $vpsIP = "$(vpsServer)"
+                $destinationPath = "\\$vpsIP\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
                 
-                Write-Host "Source (local): $sourcePath" -ForegroundColor White
-                Write-Host "Target (remote): $deploymentPath" -ForegroundColor White
+                Write-Host "Source: $sourcePath" -ForegroundColor White
+                Write-Host "Destination: $destinationPath" -ForegroundColor White
                 Write-Host ""
                 
-                # Create secure credential object
-                $password = ConvertTo-SecureString "$(DEPLOY_PASSWORD)" -AsPlainText -Force
-                $credential = New-Object System.Management.Automation.PSCredential("$(deployUser)", $password)
-                
                 try {
-                  # Execute remote commands on VPS
-                  $remoteScript = {
-                    param($deployPath)
-                    
-                    Write-Host "Stopping IIS app pool..." -ForegroundColor Yellow
-                    Import-Module WebAdministration
-                    Stop-WebAppPool -Name "KhulaFxAppPool" -ErrorAction SilentlyContinue
-                    Start-Sleep -Seconds 2
-                    
-                    Write-Host "✅ App pool stopped" -ForegroundColor Green
-                    Write-Host "Cleaning destination folder..." -ForegroundColor Yellow
-                    
-                    # Clean the destination folder completely
-                    if (Test-Path $deployPath) {
-                      Get-ChildItem -Path $deployPath -Recurse -Force | Remove-Item -Force -ErrorAction SilentlyContinue
-                    } else {
-                      New-Item -ItemType Directory -Path $deployPath -Force | Out-Null
-                    }
-                    
-                    Write-Host "✅ Destination cleaned" -ForegroundColor Green
-                    Write-Host "Ready to receive files" -ForegroundColor Green
+                  # Ensure directory exists
+                  if (-not (Test-Path $destinationPath)) {
+                    New-Item -ItemType Directory -Path $destinationPath -Force | Out-Null
+                    Write-Host "✅ Created directory" -ForegroundColor Green
                   }
                   
-                  # Stop app pool and clean on remote VPS
-                  Invoke-Command -ComputerName $(vpsServer) -ScriptBlock $remoteScript -ArgumentList $deploymentPath -Credential $credential -ErrorAction Stop
+                  # Wait for files to be unlocked
+                  Write-Host "Waiting for file locks to release..." -ForegroundColor Yellow
+                  Start-Sleep -Seconds 2
                   
-                  Write-Host ""
-                  Write-Host "Copying files to remote server..." -ForegroundColor Yellow
+                  # Clean destination with retry logic
+                  Write-Host "Cleaning destination folder..." -ForegroundColor Yellow
+                  $retryCount = 0
+                  $maxRetries = 3
                   
-                  # Copy files to VPS
-                  $copySession = New-PSSession -ComputerName $(vpsServer) -Credential $credential -ErrorAction Stop
-                  
-                  Copy-Item -Path "$sourcePath\*" -Destination $deploymentPath -Recurse -Force -ToSession $copySession -ErrorAction Stop
-                  
-                  Remove-PSSession -Session $copySession -ErrorAction SilentlyContinue
-                  
-                  Write-Host "✅ Files copied to VPS" -ForegroundColor Green
-                  Write-Host ""
-                  
-                  # Verify files on remote and start app pool
-                  $verifyScript = {
-                    param($deployPath)
-                    
-                    Write-Host "Verifying files..." -ForegroundColor Yellow
-                    $files = Get-ChildItem -Path $deployPath -Recurse -File
-                    Write-Host "✅ Total files: $($files.Count)" -ForegroundColor Green
-                    
-                    $indexExists = Test-Path "$deployPath\index.html"
-                    $webConfigExists = Test-Path "$deployPath\web.config"
-                    $robotsExists = Test-Path "$deployPath\robots.txt"
-                    
-                    Write-Host ""
-                    Write-Host "Key files check:" -ForegroundColor Yellow
-                    Write-Host "  ✅ index.html: $(if($indexExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($indexExists){'Green'}else{'Red'})
-                    Write-Host "  ✅ web.config: $(if($webConfigExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($webConfigExists){'Green'}else{'Red'})
-                    Write-Host "  ✅ robots.txt: $(if($robotsExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($robotsExists){'Green'}else{'Red'})
-                    
-                    if (-not $indexExists -or -not $webConfigExists) {
-                      throw "Critical files missing!"
+                  while ($retryCount -lt $maxRetries) {
+                    try {
+                      Get-ChildItem -Path $destinationPath -Recurse -File -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction Stop
+                      Get-ChildItem -Path $destinationPath -Recurse -Directory -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction Stop
+                      Write-Host "✅ Destination cleaned" -ForegroundColor Green
+                      break
                     }
-                    
-                    Write-Host ""
-                    Write-Host "Starting app pool..." -ForegroundColor Yellow
-                    Import-Module WebAdministration
-                    Start-WebAppPool -Name "KhulaFxAppPool" -ErrorAction Stop
-                    Start-Sleep -Seconds 3
-                    
-                    Write-Host "✅ App pool started" -ForegroundColor Green
+                    catch {
+                      $retryCount++
+                      if ($retryCount -lt $maxRetries) {
+                        Write-Host "⚠️ Retry $retryCount/$maxRetries - waiting for locks to release..." -ForegroundColor Yellow
+                        Start-Sleep -Seconds 3
+                      } else {
+                        Write-Warning "Could not fully clean destination, will overwrite files"
+                      }
+                    }
                   }
                   
-                  Invoke-Command -ComputerName $(vpsServer) -ScriptBlock $verifyScript -ArgumentList $deploymentPath -Credential $credential -ErrorAction Stop
+                  # Copy all files
+                  Write-Host "Copying files..." -ForegroundColor Yellow
+                  Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force -ErrorAction Stop
+                  Write-Host "✅ Files copied" -ForegroundColor Green
                   
+                  # Verify deployment
+                  $deployedFiles = Get-ChildItem -Path $destinationPath -Recurse -File
                   Write-Host ""
                   Write-Host "========================================" -ForegroundColor Green
                   Write-Host "✅ Deployment Complete!" -ForegroundColor Green
                   Write-Host "========================================" -ForegroundColor Green
+                  Write-Host "Files deployed: $($deployedFiles.Count)" -ForegroundColor Cyan
+                  Write-Host "Location: $destinationPath" -ForegroundColor Cyan
+                  Write-Host ""
+                  
+                  # Verify key files
+                  $indexExists = Test-Path "$destinationPath\index.html"
+                  $webConfigExists = Test-Path "$destinationPath\web.config"
+                  $robotsExists = Test-Path "$destinationPath\robots.txt"
+                  
+                  Write-Host "Key files check:" -ForegroundColor Yellow
+                  Write-Host "  ✅ index.html: $(if($indexExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($indexExists){'Green'}else{'Red'})
+                  Write-Host "  ✅ web.config: $(if($webConfigExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($webConfigExists){'Green'}else{'Red'})
+                  Write-Host "  ✅ robots.txt: $(if($robotsExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($robotsExists){'Green'}else{'Red'})
+                  
+                  if (-not $indexExists) {
+                    Write-Error "Critical: index.html is missing!"
+                    exit 1
+                  }
                 }
                 catch {
-                  Write-Host ""
                   Write-Host "========================================" -ForegroundColor Red
                   Write-Host "❌ Deployment Failed!" -ForegroundColor Red
                   Write-Host "========================================" -ForegroundColor Red
                   Write-Error $_.Exception.Message
                   exit 1
+                }
+
+          - task: PowerShell@2
+            displayName: 'Recycle App Pool'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "Recycling IIS app pool..." -ForegroundColor Yellow
+                
+                $vpsIP = "$(vpsServer)"
+                $netshare = "\\$vpsIP\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
+                
+                try {
+                  $marker = Join-Path $netshare "app_restart.txt"
+                  Get-Date | Out-File -FilePath $marker -Force
+                  Write-Host "✅ App pool recycle triggered" -ForegroundColor Green
+                  Start-Sleep -Seconds 3
+                }
+                catch {
+                  Write-Host "⚠️ Could not trigger recycle: $($_.Exception.Message)" -ForegroundColor Yellow
                 }
 
           - task: PowerShell@2

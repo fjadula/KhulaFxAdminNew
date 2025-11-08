@@ -42,12 +42,75 @@ stages:
             artifact: frontend
 
           - task: PowerShell@2
+            displayName: Verify Frontend Build
+            inputs:
+              targetType: inline
+              script: |
+                $src = "$(Pipeline.Workspace)/frontend"
+                Write-Host "Source: $src" -ForegroundColor Cyan
+                if (Test-Path $src) {
+                  $files = Get-ChildItem -Path $src -Force -Recurse -File
+                  Write-Host "Found $($files.Count) files" -ForegroundColor Green
+                  Write-Host "Sample files:" -ForegroundColor Yellow
+                  $files | Select-Object -First 5 | ForEach-Object { Write-Host "  $_" }
+                } else {
+                  Write-Host "ERROR: Source not found!" -ForegroundColor Red
+                  exit 1
+                }
+
+          - task: PowerShell@2
+            displayName: Deploy to IIS
             inputs:
               targetType: inline
               script: |
                 $src = "$(Pipeline.Workspace)/frontend"
                 $vps = "$(vpsServer)"
                 $dst = "\\$vps\c$\TRADERVPS\Sites\khulafx.com\secure-admin"
+                
+                Write-Host "========================================" -ForegroundColor Cyan
+                Write-Host "Deploying Frontend" -ForegroundColor Cyan
+                Write-Host "========================================" -ForegroundColor Cyan
+                Write-Host "Source: $src" -ForegroundColor White
+                Write-Host "VPS: $vps" -ForegroundColor White
+                Write-Host "Destination: $dst" -ForegroundColor White
+                Write-Host ""
+                
+                if (-not (Test-Path $src)) {
+                  Write-Host "ERROR: Source not found" -ForegroundColor Red
+                  exit 1
+                }
+                
+                if (-not (Test-Path $dst)) {
+                  Write-Host "ERROR: Destination not accessible" -ForegroundColor Red
+                  exit 1
+                }
+                
+                Write-Host "Copying files..." -ForegroundColor Yellow
+                $count = 0
                 Get-ChildItem -Path $src -Force | ForEach-Object {
-                  Copy-Item -Path $_.FullName -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
+                  try {
+                    if ($_.PSIsContainer) {
+                      Copy-Item -Path $_.FullName -Destination $dst -Recurse -Force -ErrorAction Stop
+                    } else {
+                      Copy-Item -Path $_.FullName -Destination $dst -Force -ErrorAction Stop
+                    }
+                    Write-Host "  OK: $($_.Name)" -ForegroundColor Green
+                    $count++
+                  } catch {
+                    Write-Host "  ERROR: $($_.Name) - $_" -ForegroundColor Red
+                  }
+                }
+                
+                Write-Host ""
+                Write-Host "========================================" -ForegroundColor Green
+                Write-Host "Deployment Complete" -ForegroundColor Green
+                Write-Host "========================================" -ForegroundColor Green
+                Write-Host "Files deployed: $count" -ForegroundColor Cyan
+                
+                $indexExists = Test-Path "$dst\index.html"
+                Write-Host "index.html exists: $(if($indexExists){'YES'}else{'NO'})" -ForegroundColor $(if($indexExists){'Green'}else{'Red'})
+                
+                if (-not $indexExists) {
+                  Write-Host "ERROR: index.html not found at destination!" -ForegroundColor Red
+                  exit 1
                 }

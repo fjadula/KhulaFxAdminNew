@@ -195,12 +195,18 @@ stages:
                     Write-Host "✅ Created directory" -ForegroundColor Green
                   }
                   
-                  # Delete all files and folders - one by one with individual error handling
+                  # Delete all files and folders EXCEPT web.config (which is locked)
                   Write-Host "Cleaning destination folder..." -ForegroundColor Yellow
                   $itemsToDelete = Get-ChildItem -Path $destinationPath -Force -ErrorAction SilentlyContinue
                   
                   $deletedCount = 0
                   foreach ($item in $itemsToDelete) {
+                    # Skip web.config - we'll overwrite it
+                    if ($item.Name -eq "web.config") {
+                      Write-Host "⏭️ Skipping locked: $($item.Name)" -ForegroundColor Yellow
+                      continue
+                    }
+                    
                     try {
                       if ($item.PSIsContainer) {
                         Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
@@ -209,17 +215,29 @@ stages:
                       }
                       $deletedCount++
                     } catch {
-                      # If we can't delete it, the copy will overwrite it
                       Write-Host "⚠️ Skipping: $($item.Name)" -ForegroundColor Yellow
                     }
                   }
-                  Write-Host "✅ Deleted $deletedCount items" -ForegroundColor Green
+                  Write-Host "✅ Deleted $deletedCount items (web.config kept for overwrite)" -ForegroundColor Green
                   
                   Start-Sleep -Seconds 1
                   
-                  # Copy all files
+                  # Copy all files - this will overwrite web.config even though it's locked
                   Write-Host "Copying files..." -ForegroundColor Yellow
-                  Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force -ErrorAction Stop
+                  
+                  # Copy files individually to handle locked files better
+                  Get-ChildItem -Path $sourcePath -Force | ForEach-Object {
+                    try {
+                      if ($_.PSIsContainer) {
+                        Copy-Item -Path $_.FullName -Destination $destinationPath -Recurse -Force -ErrorAction SilentlyContinue
+                      } else {
+                        Copy-Item -Path $_.FullName -Destination $destinationPath -Force -ErrorAction SilentlyContinue
+                      }
+                    } catch {
+                      Write-Host "⚠️ Could not copy $($_.Name): $($_.Exception.Message)" -ForegroundColor Yellow
+                    }
+                  }
+                  
                   Write-Host "✅ Files copied successfully" -ForegroundColor Green
                   
                   # Verify deployment

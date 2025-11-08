@@ -1,11 +1,20 @@
 # Azure Pipeline for KhulaFxAdminNew (Frontend Angular)
-# Auto-detects environment and builds with correct API endpoint from pipeline variables
+# GitHub Repository: https://github.com/fjadula/KhulaFxAdminNew
+# Branch: master
 
 trigger:
   branches:
     include:
-      - main
       - master
+      - main
+
+resources:
+  repositories:
+    - repository: self
+      type: github
+      name: fjadula/KhulaFxAdminNew
+      endpoint: github
+      fetchDepth: 1
 
 pool:
   name: 'Default'
@@ -47,28 +56,34 @@ stages:
         displayName: 'Build Angular'
         steps:
           - checkout: self
+            clean: true
             fetchDepth: 1
 
           - task: PowerShell@2
-            displayName: 'Verify Repository Structure'
+            displayName: 'Verify Repository'
             inputs:
               targetType: 'inline'
               script: |
+                Write-Host "Build Source Directory: $(Build.SourcesDirectory)" -ForegroundColor Cyan
+                Write-Host "Build Repository: $(Build.Repository.Name)" -ForegroundColor Cyan
+                
                 $packagePath = "$(Build.SourcesDirectory)/package.json"
-                Write-Host "Checking: $packagePath" -ForegroundColor Cyan
+                Write-Host "Looking for: $packagePath" -ForegroundColor Yellow
+                Write-Host ""
                 
                 if (Test-Path $packagePath) {
-                  Write-Host "✅ package.json found" -ForegroundColor Green
-                  Get-Content $packagePath | Select-Object -First 10
+                  Write-Host "✅ package.json FOUND" -ForegroundColor Green
+                  Write-Host "Contents:" -ForegroundColor Gray
+                  Get-Content $packagePath | Select-Object -First 5
                 } else {
-                  Write-Host "❌ package.json NOT found" -ForegroundColor Red
-                  Write-Host "Contents of $(Build.SourcesDirectory):" -ForegroundColor Yellow
-                  Get-ChildItem -Path "$(Build.SourcesDirectory)" -Force
+                  Write-Host "❌ package.json NOT FOUND" -ForegroundColor Red
+                  Write-Host "Directory contents:" -ForegroundColor Yellow
+                  Get-ChildItem -Path "$(Build.SourcesDirectory)" -Force -Depth 2
                   exit 1
                 }
 
           - task: NodeTool@0
-            displayName: 'Install Node.js'
+            displayName: 'Install Node.js 18'
             inputs:
               versionSpec: '18.x'
 
@@ -80,23 +95,6 @@ stages:
                 $env:NODE_OPTIONS="--max-old-space-size=4096"
                 Write-Host "✅ Set Node memory limit to 4GB" -ForegroundColor Green
 
-          - task: PowerShell@2
-            displayName: 'Agent debug - list sources'
-            inputs:
-              targetType: 'inline'
-              script: |
-                Write-Host "Agent info" -ForegroundColor Cyan
-                Write-Host "  Agent.WorkFolder: $(Agent.WorkFolder)"
-                Write-Host "  Pipeline.Workspace: $(Pipeline.Workspace)"
-                Write-Host "  Build.SourcesDirectory: $(Build.SourcesDirectory)"
-                Write-Host "  System.DefaultWorkingDirectory: $(System.DefaultWorkingDirectory)"
-                Write-Host ""
-                Write-Host "Listing top-level contents of Build.SourcesDirectory:" -ForegroundColor Yellow
-                Get-ChildItem -Path "$(Build.SourcesDirectory)" -Force | Sort-Object -Property PSIsContainer -Descending
-                Write-Host ""
-                Write-Host "Looking for package.json recursively (max depth 4):" -ForegroundColor Yellow
-                Get-ChildItem -Path "$(Build.SourcesDirectory)" -Filter "package.json" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
-
           - task: Npm@1
             displayName: 'npm install'
             inputs:
@@ -104,13 +102,12 @@ stages:
               workingDir: '$(Build.SourcesDirectory)'
 
           - task: PowerShell@2
-            displayName: 'Generate environment.prod.ts with API endpoint'
+            displayName: 'Generate environment.prod.ts'
             inputs:
               targetType: 'inline'
               script: |
                 $apiUrl = "$(apiUrl)"
-                
-                Write-Host "Generating environment file with API: $apiUrl" -ForegroundColor Cyan
+                Write-Host "Generating environment with API: $apiUrl" -ForegroundColor Cyan
                 
                 $envContent = @"
 export const environment = {
@@ -120,28 +117,24 @@ export const environment = {
 "@
                 
                 $envPath = "$(Build.SourcesDirectory)/src/environments/environment.prod.ts"
-                
-                # Create directory if it doesn't exist
                 $envDir = Split-Path -Path $envPath
+                
                 if (-not (Test-Path $envDir)) {
                   New-Item -ItemType Directory -Path $envDir -Force | Out-Null
-                  Write-Host "Created: $envDir" -ForegroundColor Yellow
                 }
                 
                 $envContent | Out-File -FilePath $envPath -Encoding utf8 -Force
-                Write-Host "✅ Generated: $envPath" -ForegroundColor Green
-                Write-Host "Content:" -ForegroundColor Gray
-                Get-Content $envPath
+                Write-Host "✅ Generated environment.prod.ts" -ForegroundColor Green
 
           - task: Npm@1
-            displayName: 'npm build (production)'
+            displayName: 'npm build production'
             inputs:
               command: 'custom'
               workingDir: '$(Build.SourcesDirectory)'
               customCommand: 'run build -- --configuration production --base-href=/secure-admin/'
 
           - task: PowerShell@2
-            displayName: 'Find dist folder'
+            displayName: 'Find and prepare dist folder'
             inputs:
               targetType: 'inline'
               script: |
@@ -151,17 +144,19 @@ export const environment = {
                 
                 if (-not $distFolder) {
                   Write-Error "dist folder not found"
+                  Write-Host "Directory contents:" -ForegroundColor Yellow
+                  Get-ChildItem -Path "$(Build.SourcesDirectory)" -Force
                   exit 1
                 }
                 
                 Write-Host "✅ Found dist: $($distFolder.FullName)" -ForegroundColor Green
                 
-                # Look for browser subfolder
+                # Look for browser subfolder (Angular 17+)
                 $browserFolder = Get-ChildItem -Path $distFolder.FullName -Filter "browser" -Directory -Force | Select-Object -First 1
                 
                 if ($browserFolder) {
                   $deployPath = $browserFolder.FullName
-                  Write-Host "✅ Found browser folder: $deployPath" -ForegroundColor Green
+                  Write-Host "✅ Using browser folder: $deployPath" -ForegroundColor Green
                 } else {
                   $deployPath = $distFolder.FullName
                   Write-Host "✅ Using dist folder: $deployPath" -ForegroundColor Green
@@ -217,12 +212,12 @@ export const environment = {
             artifact: frontend
 
           - task: PowerShell@2
-            displayName: 'Deploy via Network Share'
+            displayName: 'Deploy to IIS'
             inputs:
               targetType: 'inline'
               script: |
                 Write-Host "========================================" -ForegroundColor Cyan
-                Write-Host "Deploying Angular Frontend" -ForegroundColor Cyan
+                Write-Host "Deploying Frontend" -ForegroundColor Cyan
                 Write-Host "========================================" -ForegroundColor Cyan
                 
                 $sourcePath = "$(Pipeline.Workspace)/frontend"
@@ -231,47 +226,36 @@ export const environment = {
                 
                 Write-Host "Source: $sourcePath" -ForegroundColor White
                 Write-Host "Destination: $destinationPath" -ForegroundColor White
-                Write-Host ""
                 
                 try {
                   # Verify source
                   if (-not (Test-Path $sourcePath)) {
-                    Write-Error "Source folder not found: $sourcePath"
+                    Write-Error "Source not found: $sourcePath"
                     exit 1
                   }
                   
+                  Write-Host "`nVerifying source files..." -ForegroundColor Yellow
                   $sourceFiles = Get-ChildItem -Path $sourcePath -Force
-                  Write-Host "Source files: $($sourceFiles.Count)" -ForegroundColor Cyan
+                  Write-Host "✅ Found $($sourceFiles.Count) items to deploy" -ForegroundColor Green
                   
-                  # Ensure directory exists
+                  # Create destination if needed
                   if (-not (Test-Path $destinationPath)) {
                     New-Item -ItemType Directory -Path $destinationPath -Force | Out-Null
-                    Write-Host "✅ Created directory" -ForegroundColor Green
+                    Write-Host "✅ Created destination directory" -ForegroundColor Green
                   }
                   
                   # Clean destination
-                  Write-Host "`nCleaning destination folder..." -ForegroundColor Yellow
-                  $itemsToDelete = Get-ChildItem -Path $destinationPath -Force -ErrorAction SilentlyContinue
-                  
-                  $deletedCount = 0
-                  foreach ($item in $itemsToDelete) {
-                    if ($item.Name -eq "web.config") {
-                      Write-Host "⏭️  Skipping locked: web.config" -ForegroundColor Yellow
-                      continue
-                    }
-                    
+                  Write-Host "`nCleaning destination..." -ForegroundColor Yellow
+                  Get-ChildItem -Path $destinationPath -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "web.config" } | ForEach-Object {
                     try {
-                      if ($item.PSIsContainer) {
-                        Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
+                      if ($_.PSIsContainer) {
+                        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction Stop
                       } else {
-                        Remove-Item -Path $item.FullName -Force -ErrorAction Stop
+                        Remove-Item -Path $_.FullName -Force -ErrorAction Stop
                       }
-                      $deletedCount++
-                    } catch {
-                      Write-Host "⚠️  Skipping: $($item.Name)" -ForegroundColor Yellow
-                    }
+                    } catch {}
                   }
-                  Write-Host "✅ Cleaned $deletedCount items" -ForegroundColor Green
+                  Write-Host "✅ Cleaned destination" -ForegroundColor Green
                   
                   Start-Sleep -Seconds 1
                   
@@ -286,25 +270,21 @@ export const environment = {
                       }
                       Write-Host "✅ $_" -ForegroundColor Green
                     } catch {
-                      Write-Host "⚠️  $_" -ForegroundColor Yellow
+                      Write-Host "⚠️ $_" -ForegroundColor Yellow
                     }
                   }
+                  
+                  # Verify
+                  $indexExists = Test-Path "$destinationPath\index.html"
                   
                   Write-Host ""
                   Write-Host "========================================" -ForegroundColor Green
                   Write-Host "✅ Deployment Complete!" -ForegroundColor Green
                   Write-Host "========================================" -ForegroundColor Green
-                  
-                  # Verify
-                  $indexExists = Test-Path "$destinationPath\index.html"
-                  $webConfigExists = Test-Path "$destinationPath\web.config"
-                  
-                  Write-Host "Key files:" -ForegroundColor Yellow
-                  Write-Host "  ✅ index.html: $(if($indexExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($indexExists){'Green'}else{'Red'})
-                  Write-Host "  ✅ web.config: $(if($webConfigExists){'Found'}else{'MISSING'})" -ForegroundColor $(if($webConfigExists){'Green'}else{'Red'})
+                  Write-Host "index.html: $(if($indexExists){'✅ Found'}else{'❌ Missing'})" -ForegroundColor $(if($indexExists){'Green'}else{'Red'})
                   
                   if (-not $indexExists) {
-                    Write-Error "Critical: index.html is missing!"
+                    Write-Error "Deployment failed: index.html not found"
                     exit 1
                   }
                 }
@@ -317,63 +297,29 @@ export const environment = {
                 }
 
           - task: PowerShell@2
-            displayName: 'Recycle App Pool'
-            inputs:
-              targetType: 'inline'
-              script: |
-                Write-Host "Recycling IIS app pool..." -ForegroundColor Yellow
-                
-                $vpsIP = "$(vpsServer)"
-                $webConfigPath = "\\$vpsIP\c$\TRADERVPS\Sites\khulafx.com\secure-admin\web.config"
-                
-                try {
-                  $content = Get-Content -Path $webConfigPath -Raw
-                  $content | Out-File -FilePath $webConfigPath -Force
-                  Write-Host "✅ App pool recycle triggered" -ForegroundColor Green
-                  Start-Sleep -Seconds 3
-                }
-                catch {
-                  Write-Host "⚠️  Could not trigger recycle: $($_.Exception.Message)" -ForegroundColor Yellow
-                }
-
-          - task: PowerShell@2
             displayName: 'Verify Website'
             inputs:
               targetType: 'inline'
               script: |
-                Write-Host "Waiting for IIS to initialize..." -ForegroundColor Yellow
-                Start-Sleep -Seconds 8
-                
-                Write-Host "Testing website..." -ForegroundColor Yellow
-                Write-Host ""
+                Write-Host "Waiting for IIS..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 5
                 
                 $urls = @(
                   "https://khulafx.com/secure-admin",
                   "http://108.181.161.170/secure-admin"
                 )
                 
-                $success = $false
                 foreach ($url in $urls) {
                   try {
                     Write-Host "Testing: $url" -ForegroundColor Gray
-                    $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
-                    Write-Host "  ✅ Status: $($response.StatusCode)" -ForegroundColor Green
-                    $success = $true
+                    $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+                    Write-Host "✅ Status: $($response.StatusCode)" -ForegroundColor Green
+                    Write-Host "✅ Website Live!" -ForegroundColor Green
                     break
                   }
                   catch {
-                    Write-Host "  ⚠️  $($_.Exception.Message)" -ForegroundColor Yellow
+                    Write-Host "⚠️ Not yet available" -ForegroundColor Yellow
                   }
-                }
-                
-                Write-Host ""
-                if ($success) {
-                  Write-Host "========================================" -ForegroundColor Green
-                  Write-Host "✅ Website is Live and Accessible!" -ForegroundColor Green
-                  Write-Host "========================================" -ForegroundColor Green
-                  Write-Host "URL: https://khulafx.com/secure-admin" -ForegroundColor Cyan
-                } else {
-                  Write-Warning "Website not accessible yet"
                 }
 
   - stage: NotifyComplete
@@ -382,10 +328,10 @@ export const environment = {
     condition: always()
     jobs:
       - job: SendResult
-        displayName: 'Send Telegram Result'
+        displayName: 'Send Notification'
         steps:
           - task: PowerShell@2
-            displayName: 'Send Notification'
+            displayName: 'Send Telegram'
             inputs:
               targetType: 'inline'
               script: |
@@ -393,23 +339,17 @@ export const environment = {
                 $icon = if ($success) { "✅" } else { "❌" }
                 $status = if ($success) { "SUCCESS" } else { "FAILED" }
                 
-                $message = "$icon *KhulaFxAdmin Frontend Deploy $status!*`n`n"
-                $message += "📦 *Project:* KhulaFxAdminNew (Angular)`n"
-                $message += "🔢 *Build:* $(Build.BuildNumber)`n"
-                $message += "👤 *By:* $(Build.RequestedFor)`n"
-                $message += "🌿 *Branch:* $(Build.SourceBranchName)`n"
+                $message = "$icon *Frontend Deploy $status*`n`n"
+                $message += "📦 KhulaFxAdminNew`n"
+                $message += "🔢 Build: $(Build.BuildNumber)`n"
+                $message += "🌿 Branch: $(Build.SourceBranchName)`n"
                 
                 if ($success) {
-                  $message += "🌐 *URL:* https://khulafx.com/secure-admin`n"
-                  $message += "🔌 *API:* $(apiUrl)`n"
+                  $message += "🌐 https://khulafx.com/secure-admin`n"
                 }
-                
-                $duration = [math]::Round((New-TimeSpan -Start '$(System.PipelineStartTime)' -End (Get-Date)).TotalMinutes, 2)
-                $message += "⏱️  *Duration:* $duration minutes`n"
-                $message += "🔗 [View Logs](https://dev.azure.com/KhulaFx/KhulaFxTrade/_build/results?buildId=$(Build.BuildId))"
                 
                 $body = @{ chat_id = "$(TELEGRAM_CHAT_ID)"; text = $message; parse_mode = "Markdown" } | ConvertTo-Json
                 
                 try {
                   Invoke-RestMethod -Uri "https://api.telegram.org/bot$(TELEGRAM_BOT_TOKEN)/sendMessage" -Method Post -ContentType "application/json" -Body $body
-                } catch { Write-Warning "Telegram failed: $_" }
+                } catch { Write-Warning "Telegram notification skipped" }

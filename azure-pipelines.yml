@@ -80,6 +80,23 @@ stages:
                 $env:NODE_OPTIONS="--max-old-space-size=4096"
                 Write-Host "✅ Set Node memory limit to 4GB" -ForegroundColor Green
 
+          - task: PowerShell@2
+            displayName: 'Agent debug - list sources'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "Agent info" -ForegroundColor Cyan
+                Write-Host "  Agent.WorkFolder: $(Agent.WorkFolder)"
+                Write-Host "  Pipeline.Workspace: $(Pipeline.Workspace)"
+                Write-Host "  Build.SourcesDirectory: $(Build.SourcesDirectory)"
+                Write-Host "  System.DefaultWorkingDirectory: $(System.DefaultWorkingDirectory)"
+                Write-Host ""
+                Write-Host "Listing top-level contents of Build.SourcesDirectory:" -ForegroundColor Yellow
+                Get-ChildItem -Path "$(Build.SourcesDirectory)" -Force | Sort-Object -Property PSIsContainer -Descending
+                Write-Host ""
+                Write-Host "Looking for package.json recursively (max depth 4):" -ForegroundColor Yellow
+                Get-ChildItem -Path "$(Build.SourcesDirectory)" -Filter "package.json" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
+
           - task: Npm@1
             displayName: 'npm install'
             inputs:

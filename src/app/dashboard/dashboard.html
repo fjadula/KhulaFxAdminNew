@@ -20,50 +20,58 @@
         <h2>Notifier Controls</h2>
         <p class="card-subtitle">Enable or disable notification channels in real-time</p>
 
-        <div class="notifier-controls" *ngIf="notifierSettings.length > 0">
-          <div class="notifier-item" *ngFor="let notifier of notifierSettings">
-            <div class="notifier-info">
-              <h3>{{ notifier.notifierName }} Notifications</h3>
-              <p class="last-updated">Last updated: {{ notifier.lastUpdated | date:'short' }}</p>
-            </div>
-            <label class="toggle-switch">
-              <input 
-                type="checkbox" 
-                [checked]="notifier.isEnabled"
-                (change)="toggleNotifier(notifier)"
-                [disabled]="isUpdating">
-              <span class="toggle-slider"></span>
-            </label>
+        @if (notifierSettings.length > 0) {
+          <div class="notifier-controls">
+            @for (notifier of notifierSettings; track notifier.id) {
+              <div class="notifier-item">
+                <div class="notifier-info">
+                  <h3>{{ notifier.notifierName }} Notifications</h3>
+                  <p class="last-updated">Last updated: {{ notifier.lastUpdated | date:'short' }}</p>
+                </div>
+                <label class="toggle-switch">
+                  <input 
+                    type="checkbox" 
+                    [checked]="notifier.isEnabled"
+                    (change)="toggleNotifier(notifier)"
+                    [disabled]="isUpdating">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            }
           </div>
-        </div>
+        }
 
-        <div *ngIf="updateMessage" class="update-message" [class.success]="updateSuccess">
-          {{ updateMessage }}
-        </div>
+        @if (updateMessage) {
+          <div class="update-message" [class.success]="updateSuccess">
+            {{ updateMessage }}
+          </div>
+        }
       </div>
 
       <!-- Today's Stats -->
-      <div class="card" *ngIf="dailyReport">
-        <h2>Today's Performance</h2>
-        <div class="stats-grid">
-          <div class="stat-item">
-            <div class="stat-value">{{ dailyReport.totalTrades }}</div>
-            <div class="stat-label">Total Trades</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">{{ dailyReport.itmCount }}</div>
-            <div class="stat-label">ITM</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">{{ dailyReport.otmCount }}</div>
-            <div class="stat-label">OTM</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">{{ dailyReport.winRate }}%</div>
-            <div class="stat-label">Win Rate</div>
+      @if (dailyReport) {
+        <div class="card">
+          <h2>Today's Performance</h2>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <div class="stat-value">{{ dailyReport.totalTrades }}</div>
+              <div class="stat-label">Total Trades</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">{{ dailyReport.itmCount }}</div>
+              <div class="stat-label">ITM</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">{{ dailyReport.otmCount }}</div>
+              <div class="stat-label">OTM</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">{{ dailyReport.winRate }}%</div>
+              <div class="stat-label">Win Rate</div>
+            </div>
           </div>
         </div>
-      </div>
+      }
 
       <!-- Scheduled Reports Info -->
       <div class="card">
@@ -77,6 +85,13 @@
             <div>
               <h4>Daily Report</h4>
               <p>Sent every day at 11:58 PM (SAST)</p>
+              <button class="btn-trigger-report" (click)="runDailyReportNow()" [disabled]="isRunningDailyReport">
+                @if (isRunningDailyReport) {
+                  Running...
+                } @else {
+                  Run Now
+                }
+              </button>
             </div>
           </div>
           <div class="schedule-item">
@@ -89,9 +104,22 @@
             <div>
               <h4>Weekly Report</h4>
               <p>Sent every Saturday at 10:00 AM (SAST) - Monday to Friday summary</p>
+              <button class="btn-trigger-report" (click)="runWeeklyReportNow()" [disabled]="isRunningWeeklyReport">
+                @if (isRunningWeeklyReport) {
+                  Running...
+                } @else {
+                  Run Now
+                }
+              </button>
             </div>
           </div>
         </div>
+
+        @if (reportTriggerMessage) {
+          <div class="report-trigger-message" [class.success]="reportTriggerSuccess">
+            {{ reportTriggerMessage }}
+          </div>
+        }
       </div>
     </div>
   </main>

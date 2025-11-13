@@ -20,6 +20,10 @@ export class DashboardComponent implements OnInit {
   isUpdating = false;
   updateMessage = '';
   updateSuccess = false;
+  isRunningDailyReport = false;
+  isRunningWeeklyReport = false;
+  reportTriggerMessage = '';
+  reportTriggerSuccess = false;
 
   constructor(
     private authService: AuthService,
@@ -89,4 +93,58 @@ export class DashboardComponent implements OnInit {
     this.authService.logout();
     this.router.navigate(['/login']);
   }
+
+  runDailyReportNow(): void {
+  this.isRunningDailyReport = true;
+  this.reportTriggerMessage = '';
+  
+  this.notifierService.triggerDailyReport().subscribe({
+    next: () => {
+      this.reportTriggerMessage = 'Daily report triggered successfully!';
+      this.reportTriggerSuccess = true;
+      this.isRunningDailyReport = false;
+      
+      setTimeout(() => {
+        this.reportTriggerMessage = '';
+      }, 4000);
+    },
+  error: (error: any) => {
+      console.error('Error triggering daily report:', error);
+      this.reportTriggerMessage = 'Failed to trigger daily report. Please try again.';
+      this.reportTriggerSuccess = false;
+      this.isRunningDailyReport = false;
+      
+      setTimeout(() => {
+        this.reportTriggerMessage = '';
+      }, 5000);
+    }
+  });
+}
+
+runWeeklyReportNow(): void {
+  this.isRunningWeeklyReport = true;
+  this.reportTriggerMessage = '';
+  
+  this.notifierService.triggerWeeklyReport().subscribe({
+    next: () => {
+      this.reportTriggerMessage = 'Weekly report triggered successfully!';
+      this.reportTriggerSuccess = true;
+      this.isRunningWeeklyReport = false;
+      
+      setTimeout(() => {
+        this.reportTriggerMessage = '';
+      }, 4000);
+    },
+  error: (error: any) => {
+      console.error('Error triggering weekly report:', error);
+      this.reportTriggerMessage = 'Failed to trigger weekly report. Please try again.';
+      this.reportTriggerSuccess = false;
+      this.isRunningWeeklyReport = false;
+      
+      setTimeout(() => {
+        this.reportTriggerMessage = '';
+      }, 5000);
+    }
+  });
+}
 }

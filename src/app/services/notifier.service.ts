@@ -31,4 +31,12 @@ export class NotifierService {
   getWeeklyReport(): Observable<any> {
     return this.http.get(`${environment.apiUrl}/reports/weekly`);
   }
+
+  public triggerDailyReport(): Observable<any> {
+    return this.http.post(`${environment.apiUrl}/reports/daily/trigger`, {});
+  }
+
+  public triggerWeeklyReport(): Observable<any> {
+    return this.http.post(`${environment.apiUrl}/reports/weekly/trigger`, {});
+  }
 }
